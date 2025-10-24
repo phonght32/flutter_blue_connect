@@ -209,8 +209,12 @@ class FlutterBlueConnect {
     });
   }
 
-  static Future<void> startScan() async {
-    await _channel.invokeMethod('startScan');
+  static Future<void> startScan({
+    int refreshTimeMs = 500
+  }) async {
+    await _channel.invokeMethod('startScan',{
+      'refreshTimeMs': refreshTimeMs
+    });
   }
 
   static Future<void> stopScan() async {

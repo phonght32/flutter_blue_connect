@@ -65,6 +65,8 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
   private val linkLayerConnectionTimeouts = mutableMapOf<String, Pair<Handler, Runnable>>()
   private val l2capConnectionTimeouts = mutableMapOf<String, Pair<Handler, Runnable>>()
 
+  private var scanRefreshTimeMs: Int = 500
+
   private val activeL2capSockets = ConcurrentHashMap<String, BluetoothSocket>()
 
   private fun logMessage(level: String, message: String) {
@@ -231,7 +233,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
    * to send new data to the Flutter side.
    *
    * Execution cycle:
-   * - Runs every **500ms** to detect updates.
+   * - Runs every 'scanRefreshTimeMs' to detect updates.
    * - If changes are found, sends new scan results.
    * - Otherwise, waits for the next scheduled check.
    */
@@ -254,8 +256,8 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
         }
         scanResultSink?.success(devicesList)
       }
-      // Schedule next check in 500ms
-      handlerScanResultChangedCheck.postDelayed(this, 500) // Schedule next execution
+      // Schedule next check
+      handlerScanResultChangedCheck.postDelayed(this, scanRefreshTimeMs.toLong()) // Schedule next execution
     }
   }
 
@@ -407,6 +409,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
        * Handles method startscan.
        */
       "startScan" -> {
+        scanRefreshTimeMs = call.argument<Int>("refreshTimeMs") ?: 500
         val scanner = bluetoothAdapter?.bluetoothLeScanner
         val scanFilters = listOf<ScanFilter>()  // Apply filters if needed
         val settings = ScanSettings.Builder()
