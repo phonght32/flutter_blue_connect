@@ -43,6 +43,14 @@ import java.util.concurrent.ConcurrentHashMap
  * Communicates with Flutter using MethodChannel for commands and EventChannel for real-time updates.
  */
 class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
+
+  data class ScannedDevice(
+    val device: BluetoothDevice,
+    val rssi: Int,
+    val timestamp: Long
+  )
+
+
   // Channels for communication with Flutter
   private lateinit var methodChannel: MethodChannel
   private lateinit var scanChannel: EventChannel
@@ -58,8 +66,8 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
   private var bluetoothEventSink: EventChannel.EventSink? = null
 
   // Maps to store scanned Bluetooth devices with their timestamps
-  private val mapScannedBluetoothDevice = ConcurrentHashMap<String, Pair<BluetoothDevice, Long>>()
-  private var mapPreviousScannedBluetoothDevice = emptyMap<String, Pair<BluetoothDevice, Long>>()
+  private val mapScannedBluetoothDevice = ConcurrentHashMap<String, ScannedDevice>()
+  private var mapPreviousScannedBluetoothDevice = emptyMap<String, ScannedDevice>()
 
   private val pendingConnectionResults = mutableMapOf<String, MethodChannel.Result>()
   private val linkLayerConnectionTimeouts = mutableMapOf<String, Pair<Handler, Runnable>>()
@@ -141,10 +149,10 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
   private val runnableTimerCleanup = object : Runnable {
     override fun run() {
       val currentTime = System.currentTimeMillis()
-      mapScannedBluetoothDevice.entries.removeIf { (_, value) ->
-        (currentTime - value.second) > 2000  // Remove if unseen for more than 1s
+      mapScannedBluetoothDevice.entries.removeIf { (_, v) ->
+        (currentTime - v.timestamp) > 2000
       }
-      handlerTimerCleanup?.postDelayed(this, 1000) // Repeat every second
+      handlerTimerCleanup.postDelayed(this, 1000)
     }
   }
 
@@ -243,15 +251,15 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
     override fun run() {
       // Check if the scanned device list has changed
       val hasChanged = mapScannedBluetoothDevice != mapPreviousScannedBluetoothDevice
-      mapPreviousScannedBluetoothDevice = mapScannedBluetoothDevice.toMap() // Create a snapshot of the current state
+      mapPreviousScannedBluetoothDevice = mapScannedBluetoothDevice.toMap()
 
       // If there's a change, send updated device list to Flutter
       if (hasChanged) {
-        val devicesList = mapScannedBluetoothDevice.values.map { devicePair ->
+        val devicesList = mapScannedBluetoothDevice.values.map { scanned ->
           mapOf(
-            "name" to (devicePair.first.name ?: "Unknown"),
-            "bluetoothAddress" to devicePair.first.address,
-            "rssi" to devicePair.second // Timestamp (for debugging purposes)
+            "name" to (scanned.device.name ?: "Unknown"),
+            "bluetoothAddress" to scanned.device.address,
+            "rssi" to scanned.rssi
           )
         }
         scanResultSink?.success(devicesList)
@@ -268,7 +276,8 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
   private val scanCallback = object : ScanCallback() {
     override fun onScanResult(callbackType: Int, result: ScanResult) {
       val device = result.device
-      mapScannedBluetoothDevice[device.address] = Pair(device, System.currentTimeMillis())
+      val rssi = result.rssi
+      mapScannedBluetoothDevice[device.address] = ScannedDevice(device, rssi, System.currentTimeMillis())
     }
   }
 
