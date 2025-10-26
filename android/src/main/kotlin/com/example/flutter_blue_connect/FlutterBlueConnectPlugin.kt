@@ -59,6 +59,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
 
   // Bluetooth adapter reference
   private var bluetoothAdapter: BluetoothAdapter? = null
+  private var bluetoothManager: BluetoothManager? = null
   private var activeGattConnections = ConcurrentHashMap<String, BluetoothGatt>()
 
   // Sink for sending scan results to Flutter
@@ -332,6 +333,19 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
     val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
     if (device == null) {
       result.error("DEVICE_NOT_FOUND", "Open l2cap failed, could not find device with address $bluetoothAddress", null)
+      return
+    }
+
+    val manager = bluetoothManager ?: run {
+      result.error("NO_BLUETOOTH_MANAGER", "BluetoothManager is not initialized.", null)
+      return
+    }
+    val connectedDevices = manager.getConnectedDevices(BluetoothProfile.GATT)
+    val isConnected = connectedDevices?.any { it.address == bluetoothAddress } == true
+
+    if (!isConnected) {
+      result.error("NO_LINK_LAYER", "Device is not connected at GAP level", null)
+      logMessage("info", "Device $bluetoothAddress is not connected at GAP level")
       return
     }
 
@@ -631,8 +645,8 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
 
     appContext = binding.applicationContext
 
-    val bluetoothManager = binding.applicationContext.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-    bluetoothAdapter = bluetoothManager.adapter
+    bluetoothManager = binding.applicationContext.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+    bluetoothAdapter = bluetoothManager?.adapter
 
     scanChannel = EventChannel(binding.binaryMessenger, "flutter_blue_connect_scan")
     scanChannel.setStreamHandler(object : EventChannel.StreamHandler {
