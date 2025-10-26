@@ -6,6 +6,12 @@ enum FlutterBlueLinkLayerState {
   connected,
 }
 
+enum FlutterBlueL2capState {
+  idle,
+  connecting,
+  connected,
+}
+
 enum FlutterBlueBondState {
   notBonded,
   bonding,
