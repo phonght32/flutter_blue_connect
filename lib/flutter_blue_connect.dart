@@ -256,6 +256,12 @@ class FlutterBlueConnect {
     });
   }
 
+  static Future<void> l2capChannelClose({required String bluetoothAddress}) async {
+    await _channel.invokeMethod("l2capChannelClose", {
+      "bluetoothAddress": bluetoothAddress,
+    });
+  }
+
   static Future<void> l2capSend({
     required String bluetoothAddress,
     required Uint8List data,

@@ -378,6 +378,35 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
     }
   }
 
+  @RequiresApi(Build.VERSION_CODES.Q)
+  fun l2capChannelClose(bluetoothAddress: String, result: MethodChannel.Result) {
+    val socket = activeL2capSockets[bluetoothAddress]
+
+    if (socket == null) {
+      result.error("L2CAP_NOT_FOUND", "No active L2CAP channel for $bluetoothAddress", null)
+      return
+    }
+
+    CoroutineScope(Dispatchers.IO).launch {
+      try {
+        logMessage("info", "Closing L2CAP channel for $bluetoothAddress")
+
+        socket.close()
+        activeL2capSockets.remove(bluetoothAddress)
+
+        withContext(Dispatchers.Main) {
+          emitBluetoothEvent("l2cap", "disconnected", bluetoothAddress)
+          result.success("L2CAP channel for $bluetoothAddress closed successfully.")
+        }
+      } catch (e: Exception) {
+        withContext(Dispatchers.Main) {
+          result.error("L2CAP_CLOSE_ERROR", "Failed to close L2CAP: ${e.message}", null)
+        }
+      }
+    }
+  }
+
+  @RequiresApi(Build.VERSION_CODES.Q)
   fun l2capSend(
     bluetoothAddress: String,
     data: ByteArray,
@@ -527,6 +556,18 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
         } else {
           result.error("UNSUPPORTED_VERSION", "L2CAP requires Android 10 or higher.", null)
         }
+      }
+
+      /**
+       * Handles method l2capChannelClose.
+       */
+      "l2capChannelClose" -> {
+        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+        if (bluetoothAddress == null) {
+          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+          return
+        }
+        l2capChannelClose(bluetoothAddress, result)
       }
 
       /**
