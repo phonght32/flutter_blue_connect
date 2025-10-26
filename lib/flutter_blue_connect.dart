@@ -1,32 +1,32 @@
 import 'package:flutter/services.dart';
 
-enum BluetoothConnectionState {
+enum FlutterBlueLinkLayerState {
   idle,
   connecting,
   connected,
 }
 
-enum BluetoothBondState {
+enum FlutterBlueBondState {
   notBonded,
   bonding,
   bonded
 }
 
-enum BluetoothEncryptionState {
+enum FlutterBlueEncryptionState {
   notEncrypted,
   encrypting,
   encrypted
 }
 
 /// Defines Bluetooth protocol layers
-enum BluetoothLayer {
+enum FlutterBlueLayer {
   gap,
   gatt,
   l2cap,
 }
 
 /// GAP (Generic Access Profile) event types
-enum BluetoothGapEvent {
+enum FlutterBlueGapEvent {
   connected,
   disconnected,
   encryptionStateChanged,
@@ -34,30 +34,30 @@ enum BluetoothGapEvent {
 }
 
 /// GATT (Generic Attribute Profile) event types
-enum BluetoothGattEvent {
+enum FlutterBlueGattEvent {
   servicesDiscovered,
   read,
   write,
 }
 
 /// L2CAP (Logical Link Control and Adaptation Protocol) event types
-enum BluetoothL2capEvent {
+enum FlutterBlueL2capEvent {
   connected,
   disconnected,
   dataReceived,
   dataSent,
 }
 
-class BluetoothDevice {
+class FlutterBlueDevice {
   final String name;
   final String bluetoothAddress;
   final int? rssi;
-  final BluetoothConnectionState? connectionState;
+  final FlutterBlueLinkLayerState? connectionState;
 
-  BluetoothDevice({required this.name, required this.bluetoothAddress, required this.connectionState, this.rssi});
+  FlutterBlueDevice({required this.name, required this.bluetoothAddress, required this.connectionState, this.rssi});
 
-  factory BluetoothDevice.fromMap(Map<dynamic, dynamic> map) {
-    return BluetoothDevice(
+  factory FlutterBlueDevice.fromMap(Map<dynamic, dynamic> map) {
+    return FlutterBlueDevice(
       name: map['name'] ?? 'Unknown',
       bluetoothAddress: map['bluetoothAddress'],
       connectionState: map['connectionState'],
@@ -67,12 +67,12 @@ class BluetoothDevice {
 }
 
 /// Represents a structured Bluetooth event
-class BluetoothEvent {
-  final BluetoothLayer layer;
+class FlutterBlueEvent {
+  final FlutterBlueLayer layer;
   final Object event; // Must be one of: GapEvent, GattEvent, L2capEvent
   final String bluetoothAddress;
-  final BluetoothBondState bondState;
-  final BluetoothEncryptionState encryptState;
+  final FlutterBlueBondState bondState;
+  final FlutterBlueEncryptionState encryptState;
   final String? uuid;
   final List<int>? value;
   final int? status;
@@ -80,7 +80,7 @@ class BluetoothEvent {
   final Uint8List? data;
   final List<String>? services;
 
-  BluetoothEvent({
+  FlutterBlueEvent({
     required this.layer,
     required this.event,
     required this.bluetoothAddress,
@@ -94,12 +94,12 @@ class BluetoothEvent {
     this.services,
   });
 
-  factory BluetoothEvent.fromMap(Map<String, dynamic> map) {
+  factory FlutterBlueEvent.fromMap(Map<String, dynamic> map) {
     final layer = _parseLayer(map['layer']);
     final event = _parseEvent(layer, map['event']);
-    final BluetoothBondState bondState = _parseBondState(map['bondState']);
+    final FlutterBlueBondState bondState = _parseBondState(map['bondState']);
     final encryptState = _parseEncryptionState(map['encryptState']);
-    return BluetoothEvent(
+    return FlutterBlueEvent(
       layer: layer,
       event: event,
       bluetoothAddress: map['bluetoothAddress'],
@@ -114,68 +114,68 @@ class BluetoothEvent {
     );
   }
 
-  static BluetoothLayer _parseLayer(String? str) {
+  static FlutterBlueLayer _parseLayer(String? str) {
     switch (str) {
-      case 'gap': return BluetoothLayer.gap;
-      case 'gatt': return BluetoothLayer.gatt;
-      case 'l2cap': return BluetoothLayer.l2cap;
+      case 'gap': return FlutterBlueLayer.gap;
+      case 'gatt': return FlutterBlueLayer.gatt;
+      case 'l2cap': return FlutterBlueLayer.l2cap;
       default: throw Exception('Unknown layer: $str');
     }
   }
 
-  static Object _parseEvent(BluetoothLayer layer, String? str) {
+  static Object _parseEvent(FlutterBlueLayer layer, String? str) {
     switch (layer) {
-      case BluetoothLayer.gap:
+      case FlutterBlueLayer.gap:
         switch (str) {
-          case 'connected': return BluetoothGapEvent.connected;
-          case 'disconnected': return BluetoothGapEvent.disconnected;
-          case 'bondStateChanged': return BluetoothGapEvent.bondStateChanged;
+          case 'connected': return FlutterBlueGapEvent.connected;
+          case 'disconnected': return FlutterBlueGapEvent.disconnected;
+          case 'bondStateChanged': return FlutterBlueGapEvent.bondStateChanged;
         }
         break;
 
-      case BluetoothLayer.gatt:
+      case FlutterBlueLayer.gatt:
         switch (str) {
-          case 'servicesDiscovered': return BluetoothGattEvent.servicesDiscovered;
-          case 'read': return BluetoothGattEvent.read;
-          case 'write': return BluetoothGattEvent.write;
+          case 'servicesDiscovered': return FlutterBlueGattEvent.servicesDiscovered;
+          case 'read': return FlutterBlueGattEvent.read;
+          case 'write': return FlutterBlueGattEvent.write;
         }
         break;
 
-      case BluetoothLayer.l2cap:
+      case FlutterBlueLayer.l2cap:
         switch (str) {
-          case 'connected': return BluetoothL2capEvent.connected;
-          case 'disconnected': return BluetoothL2capEvent.disconnected;
-          case 'dataReceived': return BluetoothL2capEvent.dataReceived;
-          case 'dataSent': return BluetoothL2capEvent.dataSent;
+          case 'connected': return FlutterBlueL2capEvent.connected;
+          case 'disconnected': return FlutterBlueL2capEvent.disconnected;
+          case 'dataReceived': return FlutterBlueL2capEvent.dataReceived;
+          case 'dataSent': return FlutterBlueL2capEvent.dataSent;
         }
         break;
     }
     throw Exception('Unknown event: $str for layer: $layer');
   }
 
-  static BluetoothBondState _parseBondState(String? bondState) {
+  static FlutterBlueBondState _parseBondState(String? bondState) {
     switch(bondState) {
       case "notBonded":
-        return BluetoothBondState.notBonded;
+        return FlutterBlueBondState.notBonded;
       case "bonding":
-        return BluetoothBondState.bonding;
+        return FlutterBlueBondState.bonding;
       case "bonded":
-        return BluetoothBondState.bonded;
+        return FlutterBlueBondState.bonded;
       default:
-        return BluetoothBondState.notBonded;
+        return FlutterBlueBondState.notBonded;
     }
   }
 
-  static BluetoothEncryptionState _parseEncryptionState(String? encryptState) {
+  static FlutterBlueEncryptionState _parseEncryptionState(String? encryptState) {
     switch (encryptState) {
       case "notEncrypted":
-        return BluetoothEncryptionState.notEncrypted;
+        return FlutterBlueEncryptionState.notEncrypted;
       case "encrypting":
-        return BluetoothEncryptionState.encrypting;
+        return FlutterBlueEncryptionState.encrypting;
       case "encrypted":
-        return BluetoothEncryptionState.encrypted;
+        return FlutterBlueEncryptionState.encrypted;
       default:
-        return BluetoothEncryptionState.notEncrypted;
+        return FlutterBlueEncryptionState.notEncrypted;
     }
   }
 }
@@ -189,22 +189,22 @@ class FlutterBlueConnect {
     return _channel.invokeMethod<String>('getPlatformVersion');
   }
 
-  static Stream<List<BluetoothDevice>> get scanResults {
+  static Stream<List<FlutterBlueDevice>> get scanResults {
     return _scanChannel.receiveBroadcastStream().map((event) {
       if (event is List) {
-        return event.map((device) => BluetoothDevice.fromMap(Map<String, dynamic>.from(device))).toList();
+        return event.map((device) => FlutterBlueDevice.fromMap(Map<String, dynamic>.from(device))).toList();
       } else {
         return [];
       }
     });
   }
 
-  static Stream<BluetoothEvent> get bluetoothEvents {
+  static Stream<FlutterBlueEvent> get bluetoothEvents {
     return _bluetoothEventChannel.receiveBroadcastStream().map((event) {
       if (event is Map) {
-        return BluetoothEvent.fromMap(Map<String, dynamic>.from(event));
+        return FlutterBlueEvent.fromMap(Map<String, dynamic>.from(event));
       } else {
-        throw Exception("Invalid BluetoothEvent payload");
+        throw Exception("Invalid FlutterBlueEvent payload");
       }
     });
   }
