@@ -52,15 +52,15 @@ class FlutterBlueDevice {
   final String name;
   final String bluetoothAddress;
   final int? rssi;
-  final FlutterBlueLinkLayerState? connectionState;
+  final FlutterBlueLinkLayerState? llState;
 
-  FlutterBlueDevice({required this.name, required this.bluetoothAddress, required this.connectionState, this.rssi});
+  FlutterBlueDevice({required this.name, required this.bluetoothAddress, required this.llState, this.rssi});
 
   factory FlutterBlueDevice.fromMap(Map<dynamic, dynamic> map) {
     return FlutterBlueDevice(
       name: map['name'] ?? 'Unknown',
       bluetoothAddress: map['bluetoothAddress'],
-      connectionState: map['connectionState'],
+      llState: map['llState'],
       rssi: map['rssi'],
     );
   }
