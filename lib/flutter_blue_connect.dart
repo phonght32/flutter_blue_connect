@@ -58,15 +58,82 @@ class FlutterBlueDevice {
   final String name;
   final String bluetoothAddress;
   final int? rssi;
-  final FlutterBlueLinkLayerState? linkLayerState;
+  final FlutterBlueLinkLayerState linkLayerState;
+  final FlutterBlueL2capState l2capState;
+  final FlutterBlueBondState bondState;
+  final FlutterBlueEncryptionState encryptionState;
 
-  FlutterBlueDevice({required this.name, required this.bluetoothAddress, required this.linkLayerState, this.rssi});
+
+  FlutterBlueDevice({
+    required this.name,
+    required this.bluetoothAddress,
+    required this.linkLayerState,
+    required this.l2capState,
+    required this.bondState,
+    required this.encryptionState,
+    this.rssi
+  });
+
+  static FlutterBlueLinkLayerState _parseLinkLayerState(String? state) {
+    switch (state) {
+      case 'idle':
+        return FlutterBlueLinkLayerState.idle;
+      case 'connecting':
+        return FlutterBlueLinkLayerState.connecting;
+      case 'connected':
+        return FlutterBlueLinkLayerState.connected;
+      default:
+        return FlutterBlueLinkLayerState.idle;
+    }
+  }
+
+  static FlutterBlueL2capState _parseL2capState(String? state) {
+    switch (state) {
+      case 'idle':
+        return FlutterBlueL2capState.idle;
+      case 'connecting':
+        return FlutterBlueL2capState.connecting;
+      case 'connected':
+        return FlutterBlueL2capState.connected;
+      default:
+        return FlutterBlueL2capState.idle;
+    }
+  }
+
+  static FlutterBlueBondState _parseBondState(String? bondState) {
+    switch(bondState) {
+      case "notBonded":
+        return FlutterBlueBondState.notBonded;
+      case "bonding":
+        return FlutterBlueBondState.bonding;
+      case "bonded":
+        return FlutterBlueBondState.bonded;
+      default:
+        return FlutterBlueBondState.notBonded;
+    }
+  }
+
+  static FlutterBlueEncryptionState _parseEncryptionState(String? encryptionState) {
+    switch (encryptionState) {
+      case "notEncrypted":
+        return FlutterBlueEncryptionState.notEncrypted;
+      case "encrypting":
+        return FlutterBlueEncryptionState.encrypting;
+      case "encrypted":
+        return FlutterBlueEncryptionState.encrypted;
+      default:
+        return FlutterBlueEncryptionState.notEncrypted;
+    }
+  }
 
   factory FlutterBlueDevice.fromMap(Map<dynamic, dynamic> map) {
     return FlutterBlueDevice(
       name: map['name'] ?? 'Unknown',
       bluetoothAddress: map['bluetoothAddress'],
-      linkLayerState: map['linkLayerState'],
+      linkLayerState: _parseLinkLayerState(map['linkLayerState']),
+      l2capState:  _parseL2capState(map['l2capState']),
+      bondState: _parseBondState(map['bondState']),
+      encryptionState: _parseEncryptionState(map['encryptionState']),
       rssi: map['rssi'],
     );
   }
@@ -77,46 +144,30 @@ class FlutterBlueEvent {
   final FlutterBlueLayer layer;
   final Object event; // Must be one of: GapEvent, GattEvent, L2capEvent
   final String bluetoothAddress;
-  final FlutterBlueBondState bondState;
-  final FlutterBlueEncryptionState encryptState;
-  final String? uuid;
-  final List<int>? value;
-  final int? status;
-  final int? psm;
+  final FlutterBlueDevice deviceInfo;
   final Uint8List? data;
-  final List<String>? services;
 
   FlutterBlueEvent({
     required this.layer,
     required this.event,
     required this.bluetoothAddress,
-    required this.bondState,
-    required this.encryptState,
-    this.uuid,
-    this.value,
-    this.status,
-    this.psm,
+    required this.deviceInfo,
     this.data,
-    this.services,
   });
 
   factory FlutterBlueEvent.fromMap(Map<String, dynamic> map) {
     final layer = _parseLayer(map['layer']);
     final event = _parseEvent(layer, map['event']);
-    final FlutterBlueBondState bondState = _parseBondState(map['bondState']);
-    final encryptState = _parseEncryptionState(map['encryptState']);
+    // final FlutterBlueBondState bondState = _parseBondState(map['bondState']);
+    // final encryptionState = _parseEncryptionState(map['encryptionState']);
+    final FlutterBlueDevice deviceInfo = FlutterBlueDevice.fromMap(Map<String, dynamic>.from(map['deviceInfo']));
+
     return FlutterBlueEvent(
       layer: layer,
       event: event,
       bluetoothAddress: map['bluetoothAddress'],
-      bondState: bondState,
-      encryptState: encryptState,
-      uuid: map['uuid'],
-      value: map['value']?.cast<int>(),
-      status: map['status'],
-      psm: map['psm'],
       data: map['data'] as Uint8List?,
-      services: (map['services'] as List?)?.cast<String>(),
+      deviceInfo: deviceInfo
     );
   }
 
@@ -136,6 +187,7 @@ class FlutterBlueEvent {
           case 'connected': return FlutterBlueGapEvent.connected;
           case 'disconnected': return FlutterBlueGapEvent.disconnected;
           case 'bondStateChanged': return FlutterBlueGapEvent.bondStateChanged;
+          case 'encryptionStateChanged': return FlutterBlueGapEvent.encryptionStateChanged;
         }
         break;
 
@@ -157,32 +209,6 @@ class FlutterBlueEvent {
         break;
     }
     throw Exception('Unknown event: $str for layer: $layer');
-  }
-
-  static FlutterBlueBondState _parseBondState(String? bondState) {
-    switch(bondState) {
-      case "notBonded":
-        return FlutterBlueBondState.notBonded;
-      case "bonding":
-        return FlutterBlueBondState.bonding;
-      case "bonded":
-        return FlutterBlueBondState.bonded;
-      default:
-        return FlutterBlueBondState.notBonded;
-    }
-  }
-
-  static FlutterBlueEncryptionState _parseEncryptionState(String? encryptState) {
-    switch (encryptState) {
-      case "notEncrypted":
-        return FlutterBlueEncryptionState.notEncrypted;
-      case "encrypting":
-        return FlutterBlueEncryptionState.encrypting;
-      case "encrypted":
-        return FlutterBlueEncryptionState.encrypted;
-      default:
-        return FlutterBlueEncryptionState.notEncrypted;
-    }
   }
 }
 

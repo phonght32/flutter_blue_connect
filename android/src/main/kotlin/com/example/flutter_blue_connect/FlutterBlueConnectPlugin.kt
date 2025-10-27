@@ -38,6 +38,9 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
+import com.example.flutter_blue_connect.FlutterBlueConnectPlugin
+
+
 /**
  * Flutter plugin to manage Bluetooth Low Energy (BLE) scanning in Android.
  * Communicates with Flutter using MethodChannel for commands and EventChannel for real-time updates.
@@ -60,7 +63,12 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
   // Bluetooth adapter reference
   private var bluetoothAdapter: BluetoothAdapter? = null
   private var bluetoothManager: BluetoothManager? = null
-  private var activeGattConnections = ConcurrentHashMap<String, BluetoothGatt>()
+//  private var activeGattConnections = ConcurrentHashMap<String, BluetoothGatt>()
+
+  companion object {
+    // 🔧 make it accessible from anywhere
+    val activeGattConnections = ConcurrentHashMap<String, BluetoothGatt>()
+  }
 
   // Sink for sending scan results to Flutter
   private var scanResultSink: EventChannel.EventSink? = null
@@ -92,25 +100,6 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
     }
   }
 
-  private fun emitBluetoothEvent(
-    layer: String,
-    event: String,
-    bluetoothAddress: String,
-    data: Map<String, Any?> = emptyMap()
-  ) {
-    val payload = mapOf(
-      "layer" to layer,
-      "event" to event,
-      "bluetoothAddress" to bluetoothAddress
-    ) + data
-
-    logMessage("info", "emit event {bluetoothAddress: $bluetoothAddress, layer: $layer, event $event}")
-
-    Handler(Looper.getMainLooper()).post {
-      bluetoothEventSink?.success(payload)
-    }
-  }
-
   private val bondStateReceiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
       if (BluetoothDevice.ACTION_BOND_STATE_CHANGED == intent?.action) {
@@ -126,8 +115,10 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
           else -> "notBonded"
         }
 
+        FlutterBlueDeviceManager.updateDevice(bondState = stateStr)
+
         device?.let {
-          emitBluetoothEvent(
+          BluetoothEventEmitter.emit(
             "gap",
             "bondStateChanged",
             it.address,
@@ -188,14 +179,20 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
         }
 
         pendingResult?.success("Connected to $address")
-        emitBluetoothEvent(
+
+        FlutterBlueDeviceManager.updateDevice(
+          name = gatt.device.name,
+          address = address,
+          linkLayerState = "connected",
+          l2capState = "disconnected",
+          bondState = bondState,
+          encryptionState = encryptState
+        )
+
+        BluetoothEventEmitter.emit(
           "gap",
           "connected",
           address,
-          mapOf(
-            "bondState" to bondState,
-            "encryptState" to encryptState
-          )
         )
 
       } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
@@ -203,10 +200,12 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
 
         logMessage("info", "Disconnected from GATT server")
 
+        FlutterBlueDeviceManager.clear()
+
         // If connection failed before success
         pendingResult?.error("CONNECTION_FAILED", "Failed to connect to $address", null)
 
-        emitBluetoothEvent("gap", "disconnected", address)
+        BluetoothEventEmitter.emit("gap", "disconnected", address)
       }
     }
 
@@ -214,7 +213,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
       if (status == BluetoothGatt.GATT_SUCCESS) {
         logMessage("info", "Services discovered: ${gatt.services}")
 
-        emitBluetoothEvent("gatt", "servicesDiscovered", gatt.device.address, mapOf(
+        BluetoothEventEmitter.emit("gatt", "servicesDiscovered", gatt.device.address, mapOf(
           "services" to gatt.services.map { it.uuid.toString() }
         ))
       }
@@ -224,7 +223,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
       if (status == BluetoothGatt.GATT_SUCCESS) {
         logMessage("info", "Read characteristic: ${characteristic.uuid}, value: ${characteristic.value}")
 
-        emitBluetoothEvent("gatt", "read", gatt.device.address, mapOf(
+        BluetoothEventEmitter.emit("gatt", "read", gatt.device.address, mapOf(
           "uuid" to characteristic.uuid.toString(),
           "value" to characteristic.value.toList()
         ))
@@ -296,7 +295,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
             val hexString = data.joinToString(" ") { "%02X".format(it) }
             logMessage("info", "L2CAP RX | btaddr=$address, len=${data.size}, payload=$hexString")
 
-            emitBluetoothEvent("l2cap", "dataReceived", address,
+            BluetoothEventEmitter.emit("l2cap", "dataReceived", address,
               mapOf(
                 "data" to data,
                 "hex" to data.joinToString(" ") { "%02X".format(it) },
@@ -308,7 +307,9 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
       } catch (e: IOException) {
         Log.e("FlutterBlueConnect", "Disconnected from $address: ${e.message}")
         activeL2capSockets.remove(address)
-        emitBluetoothEvent("l2cap", "disconnected", address)
+
+        FlutterBlueDeviceManager.updateDevice(l2capState = "disconnected")
+        BluetoothEventEmitter.emit("l2cap", "disconnected", address)
       }
     }
   }
@@ -377,8 +378,11 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
           l2capConnectionTimeouts.remove(bluetoothAddress)
 
           activeL2capSockets[bluetoothAddress] = socket
+
+          FlutterBlueDeviceManager.updateDevice(l2capState = "connected")
+          BluetoothEventEmitter.emit("l2cap", "connected", bluetoothAddress)
+
           result.success("L2CAP channel to $bluetoothAddress opened.")
-          emitBluetoothEvent("l2cap", "connected", bluetoothAddress)
         }
 
         listenL2capEvent(socket, bluetoothAddress)
@@ -409,7 +413,9 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
         activeL2capSockets.remove(bluetoothAddress)
 
         withContext(Dispatchers.Main) {
-          emitBluetoothEvent("l2cap", "disconnected", bluetoothAddress)
+          FlutterBlueDeviceManager.updateDevice(l2capState = "disconnected")
+          BluetoothEventEmitter.emit("l2cap", "disconnected", bluetoothAddress)
+
           result.success("L2CAP channel for $bluetoothAddress closed successfully.")
         }
       } catch (e: Exception) {
@@ -662,15 +668,20 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
     bluetoothEventChannel.setStreamHandler(object : EventChannel.StreamHandler {
       override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
         bluetoothEventSink = events
+        BluetoothEventEmitter.eventSink = events
       }
 
       override fun onCancel(arguments: Any?) {
         bluetoothEventSink = null
+        BluetoothEventEmitter.eventSink = null
       }
     })
 
     val filter = IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
     appContext.registerReceiver(bondStateReceiver, filter)
+
+    // Start the encryption checker automatically
+//    BluetoothEncryptionMonitor.start()
   }
 
   /**
@@ -684,6 +695,9 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
 
     handlerScanResultChangedCheck.removeCallbacks(runnableScanResultChangedCheck)
     handlerTimerCleanup.removeCallbacks(runnableTimerCleanup)
+
+    // Stop checking when plugin is detached
+//    BluetoothEncryptionMonitor.stop()
 
     try {
       appContext.unregisterReceiver(bondStateReceiver)
