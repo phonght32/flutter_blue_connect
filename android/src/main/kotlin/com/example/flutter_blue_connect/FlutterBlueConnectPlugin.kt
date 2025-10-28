@@ -200,12 +200,13 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
 
         logMessage("info", "Disconnected from GATT server")
 
-        FlutterBlueDeviceManager.clear()
-
         // If connection failed before success
         pendingResult?.error("CONNECTION_FAILED", "Failed to connect to $address", null)
 
         BluetoothEventEmitter.emit("gap", "disconnected", address)
+
+        // Only clear device after event disconnected was emitted
+        FlutterBlueDeviceManager.clear()
       }
     }
 
@@ -549,22 +550,26 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
           return
         }
 
-        // 🔒 Check and close L2CAP channel
-        val l2capChannel = activeL2capSockets[bluetoothAddress]
-        if (l2capChannel != null) {
+        // Close L2CAP if open
+        activeL2capSockets[bluetoothAddress]?.let {
           try {
-            l2capChannel.close() // or your library-specific close method
+            it.close()
           } catch (e: Exception) {
             Log.w("L2CAPClose", "Failed to close L2CAP: ${e.message}")
           }
           activeL2capSockets.remove(bluetoothAddress)
         }
 
+        // ✅ Just disconnect, don't close yet — let callback handle it
         gatt.disconnect()
-        gatt.close() // Free system resources
-        activeGattConnections.remove(bluetoothAddress)
 
-        result.success("Disconnected from $bluetoothAddress")
+        // Optional: close later after delay
+        Handler(Looper.getMainLooper()).postDelayed({
+          gatt.close()
+          activeGattConnections.remove(bluetoothAddress)
+        }, 500)
+
+        result.success("Disconnecting from $bluetoothAddress ...")
       }
 
       /**
