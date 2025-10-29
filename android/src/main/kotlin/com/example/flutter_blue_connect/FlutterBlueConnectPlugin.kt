@@ -644,6 +644,36 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
       }
 
       /**
+       * Handles remove bond.
+       */
+      "deleteBond" -> {
+        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+
+        if (bluetoothAddress == null) {
+          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+          return
+        }
+
+        try {
+          val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
+
+          val method = device?.javaClass?.getMethod("removeBond")
+          val success = method?.invoke(device) as Boolean
+
+          if (success) {
+            Log.i("FlutterBlueConnect", "removeBond($bluetoothAddress): success")
+            result.success(true)
+          } else {
+            Log.w("FlutterBlueConnect", "removeBond($bluetoothAddress): failed")
+            result.success(false)
+          }
+        } catch (e: Exception) {
+          Log.e("FlutterBlueConnect", "Error removing bond for $bluetoothAddress", e)
+          result.error("REMOVE_BOND_ERROR", e.message, null)
+        }
+      }
+
+      /**
        * Handles undefined method.
        */
       else -> result.notImplemented()

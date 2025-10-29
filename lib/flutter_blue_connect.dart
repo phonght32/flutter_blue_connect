@@ -303,4 +303,10 @@ class FlutterBlueConnect {
       'bluetoothAddress': bluetoothAddress,
     });
   }
+
+  static Future<void> deleteBond({required String bluetoothAddress}) async {
+    await _channel.invokeMethod('deleteBond', {
+      'bluetoothAddress': bluetoothAddress
+    });
+  }
 }
