@@ -410,12 +410,17 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
       try {
         logMessage("info", "Closing L2CAP channel for $bluetoothAddress")
 
+        val hadListener = activeL2capSockets.containsKey(bluetoothAddress)
         socket.close()
         activeL2capSockets.remove(bluetoothAddress)
 
         withContext(Dispatchers.Main) {
-          FlutterBlueDeviceManager.updateDevice(l2capState = "disconnected")
-          BluetoothEventEmitter.emit("l2cap", "disconnected", bluetoothAddress)
+//          FlutterBlueDeviceManager.updateDevice(l2capState = "disconnected")
+//          BluetoothEventEmitter.emit("l2cap", "disconnected", bluetoothAddress)
+          if (!hadListener) {
+            // No listener, emit manually
+            BluetoothEventEmitter.emit("l2cap", "disconnected", bluetoothAddress)
+          }
 
           result.success("L2CAP channel for $bluetoothAddress closed successfully.")
         }
