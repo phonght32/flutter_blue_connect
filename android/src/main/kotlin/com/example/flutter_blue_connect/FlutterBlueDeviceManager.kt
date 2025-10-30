@@ -9,6 +9,7 @@ object FlutterBlueDeviceManager {
     fun updateDevice(
         name: String? = null,
         address: String? = null,
+        advData: List<Int>? = null,
         rssi: Int? = null,
         linkLayerState: String? = null,
         l2capState: String? = null,
@@ -21,6 +22,7 @@ object FlutterBlueDeviceManager {
 
         name?.let { connectedDevice?.name = it }
         address?.let { connectedDevice?.bluetoothAddress = it }
+        advData?.let { connectedDevice?.advData = it }
         rssi?.let { connectedDevice?.rssi = it }
         linkLayerState?.let { connectedDevice?.linkLayerState = it }
         l2capState?.let { connectedDevice?.l2capState = it }

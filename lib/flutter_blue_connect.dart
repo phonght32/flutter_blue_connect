@@ -57,6 +57,7 @@ enum FlutterBlueL2capEvent {
 class FlutterBlueDevice {
   final String name;
   final String bluetoothAddress;
+  final List<int>? advData;
   final int? rssi;
   final FlutterBlueLinkLayerState linkLayerState;
   final FlutterBlueL2capState l2capState;
@@ -67,6 +68,7 @@ class FlutterBlueDevice {
   FlutterBlueDevice({
     required this.name,
     required this.bluetoothAddress,
+    required this.advData,
     required this.linkLayerState,
     required this.l2capState,
     required this.bondState,
@@ -127,9 +129,15 @@ class FlutterBlueDevice {
   }
 
   factory FlutterBlueDevice.fromMap(Map<dynamic, dynamic> map) {
+    final advRaw = map['advData'];
+    final advData = (advRaw is List)
+        ? advRaw.map((e) => (e is int) ? e : 0).toList()
+        : <int>[];
+
     return FlutterBlueDevice(
       name: map['name'] ?? 'Unknown',
       bluetoothAddress: map['bluetoothAddress'],
+      advData: advData,
       linkLayerState: _parseLinkLayerState(map['linkLayerState']),
       l2capState:  _parseL2capState(map['l2capState']),
       bondState: _parseBondState(map['bondState']),
@@ -158,8 +166,6 @@ class FlutterBlueEvent {
   factory FlutterBlueEvent.fromMap(Map<String, dynamic> map) {
     final layer = _parseLayer(map['layer']);
     final event = _parseEvent(layer, map['event']);
-    // final FlutterBlueBondState bondState = _parseBondState(map['bondState']);
-    // final encryptionState = _parseEncryptionState(map['encryptionState']);
     final FlutterBlueDevice deviceInfo = FlutterBlueDevice.fromMap(Map<String, dynamic>.from(map['deviceInfo']));
 
     return FlutterBlueEvent(

@@ -49,6 +49,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
 
   data class ScannedDevice(
     val device: BluetoothDevice,
+    val advData: List<Int>,
     val rssi: Int,
     val timestamp: Long
   )
@@ -260,6 +261,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
           mapOf(
             "name" to (scanned.device.name ?: "Unknown"),
             "bluetoothAddress" to scanned.device.address,
+            "advData" to scanned.advData,
             "rssi" to scanned.rssi
           )
         }
@@ -277,8 +279,15 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
   private val scanCallback = object : ScanCallback() {
     override fun onScanResult(callbackType: Int, result: ScanResult) {
       val device = result.device
+      val advBytes = result.scanRecord?.bytes
+      val advData = advBytes?.map { it.toInt() and 0xFF } ?: emptyList()
       val rssi = result.rssi
-      mapScannedBluetoothDevice[device.address] = ScannedDevice(device, rssi, System.currentTimeMillis())
+
+      mapScannedBluetoothDevice[device.address] = ScannedDevice(
+        device,
+        advData,
+        rssi,
+        System.currentTimeMillis())
     }
   }
 
