@@ -135,7 +135,7 @@ class FlutterBlueDevice {
         : <int>[];
 
     return FlutterBlueDevice(
-      name: map['name'] ?? 'Unknown',
+      name: map['name'] ?? 'Unnamed',
       bluetoothAddress: map['bluetoothAddress'],
       advData: advData,
       linkLayerState: _parseLinkLayerState(map['linkLayerState']),

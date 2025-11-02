@@ -259,7 +259,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
       if (hasChanged) {
         val devicesList = mapScannedBluetoothDevice.values.map { scanned ->
           mapOf(
-            "name" to (scanned.device.name ?: "Unknown"),
+            "name" to (scanned.device.name ?: "Unnamed"),
             "bluetoothAddress" to scanned.device.address,
             "advData" to scanned.advData,
             "rssi" to scanned.rssi
