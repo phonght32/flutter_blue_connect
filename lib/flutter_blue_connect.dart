@@ -304,8 +304,37 @@ class FlutterBlueConnect {
     });
   }
 
+  static Future<Map<String, dynamic>> getLocalLeScOobData() async {
+    final Map res = await _channel.invokeMethod('getLocalLeScOobData');
+    return {
+      'address': (res['address'] as String),
+      'confirm': res['confirm'] as Uint8List,
+      'random': res['random'] as Uint8List,
+    };
+  }
+
+  static Future<void> setPeerLeScOobData({
+    required String bluetoothAddress,
+    required Uint8List confirmValue,
+    required Uint8List randomNumber
+  }) async {
+    await _channel.invokeMethod('setPeerLeScOobData', {
+      'address': bluetoothAddress,
+      'confirm': confirmValue,
+      'random': randomNumber
+    });
+  }
+
   static Future<void> startPairing({required String bluetoothAddress}) async {
     await _channel.invokeMethod('startPairing', {
+      'bluetoothAddress': bluetoothAddress,
+    });
+  }
+
+  static Future<void> startPairingOob({
+    required String bluetoothAddress
+  }) async {
+    await _channel.invokeMethod('startPairingOob', {
       'bluetoothAddress': bluetoothAddress,
     });
   }

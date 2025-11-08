@@ -38,8 +38,13 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
-import com.example.flutter_blue_connect.FlutterBlueConnectPlugin
+import java.security.SecureRandom
+import java.security.MessageDigest
+import javax.crypto.Cipher
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
+import com.example.flutter_blue_connect.FlutterBlueConnectPlugin
 
 /**
  * Flutter plugin to manage Bluetooth Low Energy (BLE) scanning in Android.
@@ -473,6 +478,171 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
     }
   }
 
+  private fun getBtAddressViaReflection(adapter: BluetoothAdapter): String {
+    return try {
+      val m = adapter.javaClass.getDeclaredMethod("getAddress")
+      m.isAccessible = true
+      (m.invoke(adapter) as? String ?: "00:00:00:00:00:00").uppercase() // ensures non-null
+    } catch (e: Exception) {
+      android.util.Log.w("OOB", "Reflection getAddress() failed: ${e.message}")
+      "00:00:00:00:00:00" // fallback string
+    }
+  }
+
+  private fun generateLocalLeOob(adapter: BluetoothAdapter): Boolean {
+    return try {
+      val method = adapter.javaClass.getDeclaredMethod("generateLocalLeOobData")
+      method.isAccessible = true
+      val success = method.invoke(adapter) as? Boolean ?: false
+      Log.d("OOB", "generateLocalLeOobData success = $success")
+      success
+    } catch (e: Exception) {
+      Log.e("OOB", "Failed to call generateLocalLeOobData: ${e.message}")
+      false
+    }
+  }
+
+  private fun getLocalLeScOobData(result: MethodChannel.Result, adapter: BluetoothAdapter) {
+    try {
+      // 1. Generate platform OOB data
+      val success = generateLocalLeOob(adapter)
+      if (success) {
+        // 2. Try reflection to get the OOB object
+        val candidates = listOf("getLeOobData", "getOobData", "getLeOob", "leOobData", "oobData")
+        var confirmBytes: ByteArray? = null
+        var randomBytes: ByteArray? = null
+
+        for (name in candidates) {
+          try {
+            val method = adapter.javaClass.methods.firstOrNull { it.name.equals(name, true) }
+            if (method != null) {
+              method.isAccessible = true
+              val oobObj = method.invoke(adapter) ?: continue
+              val oobClass = oobObj.javaClass
+
+              // Try multiple getter names
+              confirmBytes = oobClass.methods.firstOrNull { it.name.equals("getConfirmValue", true) || it.name.equals("getConfirm", true) }
+                ?.invoke(oobObj) as? ByteArray
+              randomBytes = oobClass.methods.firstOrNull { it.name.equals("getRandomValue", true) || it.name.equals("getRandom", true) }
+                ?.invoke(oobObj) as? ByteArray
+
+              if (confirmBytes != null && randomBytes != null) break
+            }
+          } catch (inner: Exception) {
+            Log.w("OOB", "Candidate $name failed: ${inner.message}")
+          }
+        }
+
+        // 3. Get local BT address
+        val addr = getBtAddressViaReflection(adapter)
+
+        Log.d("OOB", "Confirm: ${confirmBytes?.joinToString { "%02X".format(it) }}, Random: ${randomBytes?.joinToString { "%02X".format(it) }}")
+
+        if (confirmBytes != null && randomBytes != null) {
+          val map: MutableMap<String, Any> = HashMap()
+          map["address"] = addr
+          map["confirm"] = confirmBytes
+          map["random"] = randomBytes
+          result.success(map)
+          return
+        }
+      }
+
+      // 4. Fallback if reflection failed
+      result.error("OOB_FAILED", "Could not get OOB data via reflection", null)
+    } catch (e: Exception) {
+      result.error("OOB_EXCEPTION", e.message, null)
+    }
+  }
+
+
+  // Try to set peer OOB: address + confirm + random
+  fun setPeerLeOob(adapter: BluetoothAdapter, peerAddress: String, confirm: ByteArray, random: ByteArray): Boolean {
+    val candidates = listOf(
+      "setLeOobData",
+      "setOobData",
+      "setRemoteOobData",
+      "setPeerOobData",
+      "setLeOobForAddress"
+    )
+
+    // Try adapter methods first
+    for (name in candidates) {
+      try {
+        val methods = adapter.javaClass.methods.filter { it.name.equals(name, true) }
+        for (m in methods) {
+          try {
+            m.isAccessible = true
+            val params = m.parameterTypes
+            // common signature: (String address, byte[] confirm, byte[] random)
+            if (params.size == 3 && params[0].isAssignableFrom(String::class.java)
+              && params[1].isAssignableFrom(ByteArray::class.java)
+              && params[2].isAssignableFrom(ByteArray::class.java)
+            ) {
+              m.invoke(adapter, peerAddress, confirm, random)
+              Log.i(TAG, "Invoked $name(address, confirm, random) on adapter")
+              return true
+            }
+            // maybe signature: (byte[] confirm, byte[] random, String address)
+            if (params.size == 3 && params[0].isAssignableFrom(ByteArray::class.java)
+              && params[1].isAssignableFrom(ByteArray::class.java)
+              && params[2].isAssignableFrom(String::class.java)
+            ) {
+              m.invoke(adapter, confirm, random, peerAddress)
+              Log.i(TAG, "Invoked $name(confirm, random, address) on adapter")
+              return true
+            }
+          } catch (inner: Throwable) {
+            Log.w(TAG, "Adapter method $name failed signature try: ${inner.message}")
+          }
+        }
+      } catch (e: Throwable) {
+        Log.w(TAG, "Reflection candidate $name failed on adapter: ${e.message}")
+      }
+    }
+
+    // Try IBluetooth stub
+    try {
+      val smClass = Class.forName("android.os.ServiceManager")
+      val getService = smClass.getMethod("getService", String::class.java)
+      val binder = getService.invoke(null, "bluetooth") as? IBinder
+      if (binder != null) {
+        val stubClass = Class.forName("android.bluetooth.IBluetooth\$Stub")
+        val asInterface = stubClass.getMethod("asInterface", IBinder::class.java)
+        val iBluetooth = asInterface.invoke(null, binder)
+        if (iBluetooth != null) {
+          for (name in candidates) {
+            try {
+              val methods = iBluetooth.javaClass.methods.filter { it.name.equals(name, true) }
+              for (m in methods) {
+                try {
+                  m.isAccessible = true
+                  val params = m.parameterTypes
+                  if (params.size == 3 && params[0].isAssignableFrom(String::class.java)
+                    && params[1].isAssignableFrom(ByteArray::class.java)
+                    && params[2].isAssignableFrom(ByteArray::class.java)
+                  ) {
+                    m.invoke(iBluetooth, peerAddress, confirm, random)
+                    Log.i(TAG, "Invoked IBluetooth.$name(address, confirm, random)")
+                    return true
+                  }
+                } catch (inner: Throwable) {
+                  Log.w(TAG, "IBluetooth $name failed: ${inner.message}")
+                }
+              }
+            } catch (_: Throwable) {}
+          }
+        }
+      }
+    } catch (e: Throwable) {
+      Log.w(TAG, "IBluetooth reflection failed: ${e.message}")
+    }
+
+    Log.w(TAG, "Unable to set peer LE OOB via reflection")
+    return false
+  }
+
+
   /**
    * Handles Flutter method calls for starting/stopping the Bluetooth scan.
    */
@@ -623,6 +793,50 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
 
         l2capSend(bluetoothAddress, payload, result)
       }
+
+      /**
+       * Handles method startPairing.
+       */
+      "getLocalLeScOobData" -> {
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+        if (adapter == null) {
+          result.error("NO_ADAPTER", "Bluetooth adapter not available", null)
+          return
+        }
+        val args = call.arguments as Map<*, *>
+        val confirm = args["confirm"] as? ByteArray
+        val random = args["random"] as? ByteArray
+        if (confirm == null || random == null) {
+          result.error("INVALID", "missing", null); return
+        }
+        val ok = setLocalLeOob(adapter, confirm, random)
+        if (ok) result.success(null) else result.error("SET_LOCAL_OOB_FAILED", null, null)
+        return
+      }
+
+      /**
+       * Handles method startPairing.
+       */
+      "setPeerLeScOobData" -> {
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+        if (adapter == null) {
+          result.error("NO_ADAPTER", "Bluetooth adapter not available", null)
+          return
+        }
+
+        val args = call.arguments as Map<*, *>
+        val addr = args["address"] as? String ?: ""
+        val confirm = args["confirm"] as? ByteArray
+        val random = args["random"] as? ByteArray
+
+        if (confirm == null || random == null) {
+          result.error("INVALID", "missing", null); return
+        }
+
+        setPeerLeOob(adapter, addr, confirm, random)
+        return
+      }
+
       /**
        * Handles method startPairing.
        */
@@ -649,6 +863,98 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
           }
         } catch (e: Exception) {
           result.error("PAIRING_ERROR", e.message, null)
+        }
+      }
+
+      /**
+       * Handles method startPairing.
+       */
+      "startPairingOob" -> {
+        val localAddr = call.argument<String>("localAddress")
+        val localRandom = call.argument<ByteArray>("localRandom")
+        val localConfirm = call.argument<ByteArray>("localConfirm")
+
+        val remoteAddr = call.argument<String>("remoteAddress")
+        val remoteRandom = call.argument<ByteArray>("remoteRandom")
+        val remoteConfirm = call.argument<ByteArray>("remoteConfirm")
+
+        val transportStr = call.argument<String>("transport") ?: "le"
+
+        if (remoteAddr.isNullOrEmpty() || remoteRandom == null || remoteConfirm == null) {
+          result.error("INVALID_ARGUMENT", "Missing remote OOB parameters.", null)
+          return
+        }
+
+        val device = bluetoothAdapter?.getRemoteDevice(remoteAddr)
+        if (device == null) {
+          result.error("DEVICE_NOT_FOUND", "Device not found for address $remoteAddr", null)
+          return
+        }
+
+        try {
+          val oobDataClass = Class.forName("android.bluetooth.OobData")
+//          val leBuilderClass = Class.forName("android.bluetooth.OobData\$LeBuilder")
+//          val leBuilder = leBuilderClass.getDeclaredConstructor().newInstance()
+          val leBuilderClass = Class.forName("android.bluetooth.OobData\$LeBuilder")
+          val leBuilder = try {
+            // Try no-arg constructor first
+            leBuilderClass.getDeclaredConstructor().apply { isAccessible = true }.newInstance()
+          } catch (e: NoSuchMethodException) {
+            try {
+              // Fallback: constructor with BluetoothDevice
+              val adapter = BluetoothAdapter.getDefaultAdapter()
+              val deviceCtor = leBuilderClass.getDeclaredConstructor(BluetoothDevice::class.java)
+              deviceCtor.isAccessible = true
+              val tmpDev = adapter?.bondedDevices?.firstOrNull() ?: adapter?.getRemoteDevice("00:00:00:00:00:00")
+              deviceCtor.newInstance(tmpDev)
+            } catch (inner: Exception) {
+              throw RuntimeException("Cannot instantiate OobData.LeBuilder", inner)
+            }
+          }
+
+
+          // Remote OOB data for pairing
+          leBuilderClass.getMethod("setConfirmValue", ByteArray::class.java)
+            .invoke(leBuilder, remoteConfirm)
+          leBuilderClass.getMethod("setRandomValue", ByteArray::class.java)
+            .invoke(leBuilder, remoteRandom)
+
+          // Optional: set remote device address
+          val addrBytes = remoteAddr.split(":").map { it.toInt(16).toByte() }.toByteArray()
+          val setAddrMethod = leBuilderClass.getMethod(
+            "setDeviceAddressWithType",
+            ByteArray::class.java,
+            Int::class.javaPrimitiveType
+          )
+          setAddrMethod.invoke(leBuilder, addrBytes, 0) // 0 = public, 1 = random
+
+          // Build final OOBData object
+          val buildMethod = leBuilderClass.getMethod("build")
+          val oobDataObj = buildMethod.invoke(leBuilder)
+
+          val transportVal = if (transportStr.lowercase() == "bredr") 1 else 2
+
+          // Call hidden API
+          val createBondOutOfBand = device.javaClass.getMethod(
+            "createBondOutOfBand",
+            Int::class.javaPrimitiveType,
+            oobDataClass
+          )
+          val started = createBondOutOfBand.invoke(device, transportVal, oobDataObj) as? Boolean ?: false
+
+          // Log both sides for debugging
+          Log.i("OOB_PAIRING", "Local -> addr=$localAddr, random=${localRandom?.joinToString()} confirm=${localConfirm?.joinToString()}")
+          Log.i("OOB_PAIRING", "Remote -> addr=$remoteAddr, random=${remoteRandom?.joinToString()} confirm=${remoteConfirm?.joinToString()}")
+
+          if (started) {
+            result.success("LE OOB pairing started successfully with remote OOB data.")
+          } else {
+            result.error("PAIRING_FAILED", "createBondOutOfBand returned false", null)
+          }
+
+        } catch (e: Exception) {
+          Log.e("OOB_PAIRING", "Reflection failed: ${e.message}", e)
+          result.error("OOB_REFLECTION_ERROR", "Reflection failed: ${e.message}", null)
         }
       }
 
