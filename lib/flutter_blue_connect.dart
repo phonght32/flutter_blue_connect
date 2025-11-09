@@ -227,6 +227,10 @@ class FlutterBlueConnect {
     return _channel.invokeMethod<String>('getPlatformVersion');
   }
 
+  static Future<void> printAllBluetoothMethods() async {
+    await _channel.invokeMethod<Map>('printAllBluetoothMethods');
+  }
+
   static Stream<List<FlutterBlueDevice>> get scanResults {
     return _scanChannel.receiveBroadcastStream().map((event) {
       if (event is List) {
@@ -302,6 +306,15 @@ class FlutterBlueConnect {
       'bluetoothAddress': bluetoothAddress,
       'data': data,
     });
+  }
+
+  static Future<Map<String, dynamic>?> generateLocalLeScOobData() async {
+    final data = await _channel.invokeMethod<Map>('generateLocalLeScOobData');
+    if (data != null) {
+      print("📡 Local OOB Data:");
+      data.forEach((k, v) => print("  $k: $v"));
+    }
+    return data?.map((k, v) => MapEntry(k, v.toString()));
   }
 
   static Future<Map<String, dynamic>> getLocalLeScOobData() async {
