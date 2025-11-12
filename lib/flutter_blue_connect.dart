@@ -57,12 +57,12 @@ enum FlutterBlueL2capEvent {
 class FlutterBlueDevice {
   final String name;
   final String bluetoothAddress;
-  final List<int>? advData;
-  final int? rssi;
-  final FlutterBlueLinkLayerState linkLayerState;
-  final FlutterBlueL2capState l2capState;
-  final FlutterBlueBondState bondState;
-  final FlutterBlueEncryptionState encryptionState;
+  List<int>? advData;
+  int? rssi;
+  FlutterBlueLinkLayerState linkLayerState;
+  FlutterBlueL2capState l2capState;
+  FlutterBlueBondState bondState;
+  FlutterBlueEncryptionState encryptionState;
 
 
   FlutterBlueDevice({
@@ -354,6 +354,12 @@ class FlutterBlueConnect {
 
   static Future<void> deleteBond({required String bluetoothAddress}) async {
     await _channel.invokeMethod('deleteBond', {
+      'bluetoothAddress': bluetoothAddress
+    });
+  }
+
+  static Future<void> startEncryptConnection({required String bluetoothAddress}) async {
+    await _channel.invokeMethod('startEncryptConnection', {
       'bluetoothAddress': bluetoothAddress
     });
   }
