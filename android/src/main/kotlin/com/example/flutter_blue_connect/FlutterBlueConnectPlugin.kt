@@ -960,6 +960,23 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
         }
       }
 
+      "startEncryptConnection" -> {
+        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+
+        if (bluetoothAddress == null) {
+          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+          return
+        }
+
+        try {
+          val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
+          device?.setPairingConfirmation(true);
+        } catch (e: Exception) {
+          Log.e("FlutterBlueConnect", "Error encrypt connection for $bluetoothAddress", e)
+          result.error("ENCRYPT_CONNECTION_ERROR", e.message, null)
+        }
+      }
+
       /**
        * Handles remove bond.
        */
@@ -1038,7 +1055,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
     appContext.registerReceiver(bondStateReceiver, filter)
 
     // Start the encryption checker automatically
-//    BluetoothEncryptionMonitor.start()
+    BluetoothEncryptionMonitor.start()
   }
 
   /**
@@ -1054,7 +1071,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
     handlerTimerCleanup.removeCallbacks(runnableTimerCleanup)
 
     // Stop checking when plugin is detached
-//    BluetoothEncryptionMonitor.stop()
+    BluetoothEncryptionMonitor.stop()
 
     try {
       appContext.unregisterReceiver(bondStateReceiver)
