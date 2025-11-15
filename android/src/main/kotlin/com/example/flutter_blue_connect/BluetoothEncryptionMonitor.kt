@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentHashMap
 object BluetoothEncryptionMonitor {
 
   private val handler = Handler(Looper.getMainLooper())
-  private var lastEncryptionState: String? = null
+  private var lastEncryptionState: String? = "notEncrypted"
 
   // Runs periodically
   private val encryptionCheckRunnable = object : Runnable {
@@ -28,7 +28,7 @@ object BluetoothEncryptionMonitor {
               val isEncrypted = isConnectionEncrypted(device)
               val newState = if (isEncrypted) "encrypted" else "notEncrypted"
 
-              if (lastEncryptionState == null || lastEncryptionState != newState) {
+              if (lastEncryptionState != newState) {
                 lastEncryptionState = newState
 
                 FlutterBlueDeviceManager.updateDevice(encryptionState = newState)
@@ -39,10 +39,7 @@ object BluetoothEncryptionMonitor {
                   bluetoothAddress = address,
                 )
 
-                Log.d(
-                  "BluetoothEncryptionMonitor",
-                  "🔒 Encryption state changed: $address → $newState"
-                )
+                Log.i("BluetoothEncryptionMonitor", "🔒 Encryption state changed: $address → $newState")
               }
             }
           }
@@ -51,18 +48,20 @@ object BluetoothEncryptionMonitor {
         Log.w("BluetoothEncryptionMonitor", "Check failed: ${e.message}")
       }
 
-      handler.postDelayed(this, 1000) // check every 5s
+      handler.postDelayed(this, 100) // check every 100ms
     }
   }
 
   fun start() {
     handler.post(encryptionCheckRunnable)
-    Log.d("BluetoothEncryptionMonitor", "Started periodic encryption check")
   }
 
   fun stop() {
     handler.removeCallbacks(encryptionCheckRunnable)
-    Log.d("BluetoothEncryptionMonitor", "Stopped periodic encryption check")
+  }
+
+  fun resetState() {
+    lastEncryptionState = "notEncrypted"
   }
 
   // Uses reflection to check if the connection is encrypted

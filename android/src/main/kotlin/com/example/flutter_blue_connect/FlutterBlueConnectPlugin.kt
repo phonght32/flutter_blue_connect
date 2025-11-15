@@ -216,6 +216,8 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
         )
 
       } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+        BluetoothEncryptionMonitor.resetState()
+
         linkLayerConnectionTimeouts.remove(address)
 
         logMessage("info", "Disconnected from GATT server")
@@ -851,10 +853,6 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
         }
       }
 
-
-
-
-
       /**
        * Handles method startPairing.
        */
@@ -963,19 +961,29 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
       "startEncryptConnection" -> {
         val bluetoothAddress = call.argument<String>("bluetoothAddress")
 
-        if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+        val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
+        if (device == null) {
+          result.error("DEVICE_NOT_FOUND", "Device not found for address $bluetoothAddress", null)
           return
         }
 
         try {
-          val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
-          device?.setPairingConfirmation(true);
+          // Reflection để gọi hidden API
+          val method = device.javaClass.getDeclaredMethod("startEncryptConnection")
+          method.isAccessible = true
+          val success = method.invoke(device) as Boolean
+
+          if (success) {
+            result.success("Encrypt connection started for $bluetoothAddress")
+          } else {
+            result.error("ENCRYPT_FAILED", "startEncryptConnection() returned false", null)
+          }
+
         } catch (e: Exception) {
-          Log.e("FlutterBlueConnect", "Error encrypt connection for $bluetoothAddress", e)
-          result.error("ENCRYPT_CONNECTION_ERROR", e.message, null)
+          result.error("ENCRYPT_FAILED", e.message, null)
         }
       }
+
 
       /**
        * Handles remove bond.
