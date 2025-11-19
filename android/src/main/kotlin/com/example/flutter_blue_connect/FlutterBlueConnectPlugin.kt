@@ -108,6 +108,9 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
 
   private val activeL2capSockets = ConcurrentHashMap<String, BluetoothSocket>()
 
+  private var channelSoundingManager: ChannelSoundingManager? = null
+
+
   private fun logMessage(level: String, message: String) {
     val ts = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US)
       .format(java.util.Date())
@@ -1017,6 +1020,47 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
         }
       }
 
+      "startChannelSounding" -> {
+        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+        if (bluetoothAddress == null) {
+          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+          return
+        }
+
+        if (channelSoundingManager == null) {
+          result.error("MANAGER_NOT_INITIALIZED", "ChannelSoundingManager not initialized", null)
+          return
+        }
+
+        try {
+          channelSoundingManager?.startChannelSounding(bluetoothAddress)
+
+          result.success("Channel sounding started for $bluetoothAddress")
+        } catch (e: Exception) {
+          result.error("START_FAILED", e.message, null)
+        }
+      }
+
+      "stopChannelSounding" -> {
+        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+        if (bluetoothAddress == null) {
+          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+          return
+        }
+
+        if (channelSoundingManager == null) {
+          result.error("MANAGER_NOT_INITIALIZED", "ChannelSoundingManager not initialized", null)
+          return
+        }
+
+        try {
+          channelSoundingManager?.stopChannelSounding(bluetoothAddress)
+          result.success("Channel sounding stopped for $bluetoothAddress")
+        } catch (e: Exception) {
+          result.error("STOP_FAILED", e.message, null)
+        }
+      }
+
       /**
        * Handles undefined method.
        */
@@ -1066,6 +1110,8 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
 
     // Start the encryption checker automatically
     BluetoothEncryptionMonitor.start()
+
+    channelSoundingManager = ChannelSoundingManager(appContext)
   }
 
   /**

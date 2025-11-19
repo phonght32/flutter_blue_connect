@@ -1,3 +1,5 @@
+import 'dart:ffi';
+
 import 'package:flutter/services.dart';
 
 enum FlutterBlueLinkLayerState {
@@ -36,7 +38,8 @@ enum FlutterBlueGapEvent {
   connected,
   disconnected,
   encryptionStateChanged,
-  bondStateChanged
+  bondStateChanged,
+  channelSoundingDataReady
 }
 
 /// GATT (Generic Attribute Profile) event types
@@ -154,6 +157,7 @@ class FlutterBlueEvent {
   final String bluetoothAddress;
   final FlutterBlueDevice deviceInfo;
   final Uint8List? data;
+  final double? dataChannelSounding;
 
   FlutterBlueEvent({
     required this.layer,
@@ -161,6 +165,7 @@ class FlutterBlueEvent {
     required this.bluetoothAddress,
     required this.deviceInfo,
     this.data,
+    this.dataChannelSounding
   });
 
   factory FlutterBlueEvent.fromMap(Map<String, dynamic> map) {
@@ -173,6 +178,7 @@ class FlutterBlueEvent {
       event: event,
       bluetoothAddress: map['bluetoothAddress'],
       data: map['data'] as Uint8List?,
+      dataChannelSounding: map['dataChannelSounding'] != null ? (map['dataChannelSounding'] as num).toDouble() : null,
       deviceInfo: deviceInfo
     );
   }
@@ -194,6 +200,7 @@ class FlutterBlueEvent {
           case 'disconnected': return FlutterBlueGapEvent.disconnected;
           case 'bondStateChanged': return FlutterBlueGapEvent.bondStateChanged;
           case 'encryptionStateChanged': return FlutterBlueGapEvent.encryptionStateChanged;
+          case 'channelSoundingDataReady': return FlutterBlueGapEvent.channelSoundingDataReady;
         }
         break;
 

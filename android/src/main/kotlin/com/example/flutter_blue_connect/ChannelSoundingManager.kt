@@ -7,6 +7,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 
+import android.util.Log
+
+
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -32,6 +35,7 @@ class ChannelSoundingManager(private val context: Context) {
   private val rangingManager: RangingManager? = context.getSystemService(RangingManager::class.java)
   private var rangingSession: RangingSession? = null
   private lateinit var rangingCapabilityCallback: RangingManager.RangingCapabilitiesCallback
+  private var deviceAddress : String? = null
 
   /**
    * Checks if the app has the RANGING permission.
@@ -79,8 +83,30 @@ class ChannelSoundingManager(private val context: Context) {
       peer: RangingDevice,
       data: RangingData
     ) {
+      try {
+        var measuredDistance : Float = 0.0f
+        data.distance?.measurement?.toFloat()?.let { distance ->
+          measuredDistance = distance
+        }
 
+        val bluetoothAddress = deviceAddress?: return
+
+        // Emit the channelSoundingDataReady event to Flutter
+        BluetoothEventEmitter.emit(
+          "gap",
+          "channelSoundingDataReady",
+          bluetoothAddress,
+          mapOf(
+            "dataChannelSounding" to measuredDistance
+          )
+        )
+
+        Log.d("ChannelSounding", "Distance update emitted: $measuredDistance m for $bluetoothAddress")
+      } catch (e: Exception) {
+        Log.e("ChannelSounding", "Error emitting channel sounding data: ${e.message}")
+      }
     }
+
 
     override fun onStarted(
       peer: RangingDevice,
@@ -99,6 +125,8 @@ class ChannelSoundingManager(private val context: Context) {
 
   fun startChannelSounding(bluetoothAddress: String) {
     if (rangingManager == null || rangingSession !=null || !hasRangingPermission(context)) return
+
+    deviceAddress = bluetoothAddress
 
     val setRangingUpdateRate = RawRangingDevice.UPDATE_RATE_NORMAL
 
@@ -191,6 +219,9 @@ class ChannelSoundingManager(private val context: Context) {
     onClosed: (suspend () -> Unit)? = null
   ) {
     val session = rangingSession ?: return
+
+    deviceAddress = null
+
     CoroutineScope(Dispatchers.IO).launch {
       try {
         session.stop()
