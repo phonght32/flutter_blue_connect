@@ -58,6 +58,8 @@ import java.util.concurrent.Executors
 
 import com.example.flutter_blue_connect.FlutterBlueConnectPlugin
 
+import android.ranging.RangingManager;
+
 /**
  * Flutter plugin to manage Bluetooth Low Energy (BLE) scanning in Android.
  * Communicates with Flutter using MethodChannel for commands and EventChannel for real-time updates.

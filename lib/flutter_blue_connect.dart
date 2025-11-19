@@ -363,4 +363,16 @@ class FlutterBlueConnect {
       'bluetoothAddress': bluetoothAddress
     });
   }
+
+  static Future<void> startChannelSounding(String address) async {
+    await _channel.invokeMethod('startChannelSounding', {
+      'bluetoothAddress': address
+    });
+  }
+
+  static Future<void> stopChannelSounding(String address) async {
+    await _channel.invokeMethod('stopChannelSounding', {
+      'bluetoothAddress': address
+    });
+  }
 }
