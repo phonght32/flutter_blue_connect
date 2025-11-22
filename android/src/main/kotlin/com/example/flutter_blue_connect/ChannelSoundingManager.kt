@@ -59,13 +59,16 @@ class ChannelSoundingManager(private val context: Context) {
    * @param deviceId The ID of the device whose data should be cleared.
    */
   fun clear(bluetoothAddress: String) {
-
+    if (deviceAddress == bluetoothAddress) {
+      deviceAddress = null
+    }
   }
 
   // Implement all abstract methods of RangingSession.Callback
   private val rangingSessionCallback = @RequiresApi(Build.VERSION_CODES.BAKLAVA)
   object : RangingSession.Callback {
     override fun onClosed(reason: Int) {
+      rangingSession = null
       // Unregister the callback to avoid memory leaks
       rangingManager?.unregisterCapabilitiesCallback(rangingCapabilityCallback)
     }
@@ -89,7 +92,7 @@ class ChannelSoundingManager(private val context: Context) {
           measuredDistance = distance
         }
 
-        val bluetoothAddress = deviceAddress?: return
+        val bluetoothAddress = deviceAddress?: ""
 
         // Emit the channelSoundingDataReady event to Flutter
         BluetoothEventEmitter.emit(
@@ -179,14 +182,12 @@ class ChannelSoundingManager(private val context: Context) {
             rangingSession?.let {
               try {
                 it.addDeviceToRangingSession(rawRangingDeviceConfig)
+                it.start(rangingPreference) // only start if addDevice succeeds
               } catch (e: Exception) {
-
-              } finally {
-                it.start(rangingPreference)
+                Log.e("ChannelSounding", "Failed to add device: ${e.message}")
+                it.close()
+                rangingSession = null
               }
-            } ?: run {
-
-              return@RangingCapabilitiesCallback
             }
           } else {
 
