@@ -67,10 +67,8 @@ class ChannelSoundingManager(private val context: Context) {
   // Implement all abstract methods of RangingSession.Callback
   private val rangingSessionCallback = @RequiresApi(Build.VERSION_CODES.BAKLAVA)
   object : RangingSession.Callback {
-    override fun onClosed(reason: Int) {
-      rangingSession = null
-      // Unregister the callback to avoid memory leaks
-      rangingManager?.unregisterCapabilitiesCallback(rangingCapabilityCallback)
+    override fun onOpened() {
+
     }
 
     override fun onOpenFailed(reason: Int) {
@@ -78,7 +76,10 @@ class ChannelSoundingManager(private val context: Context) {
       rangingManager?.unregisterCapabilitiesCallback(rangingCapabilityCallback)
     }
 
-    override fun onOpened() {
+    override fun onStarted(
+      peer: RangingDevice,
+      technology: Int
+    ) {
 
     }
 
@@ -110,19 +111,19 @@ class ChannelSoundingManager(private val context: Context) {
       }
     }
 
-
-    override fun onStarted(
+    override fun onStopped(
       peer: RangingDevice,
       technology: Int
     ) {
 
     }
 
-    override fun onStopped(
-      peer: RangingDevice,
-      technology: Int
-    ) {
-
+    override fun onClosed(reason: Int) {
+      rangingSession = null
+      try {
+        rangingManager?.unregisterCapabilitiesCallback(rangingCapabilityCallback)
+      } catch (_: Exception) {}
+      deviceAddress = null
     }
   }
 
@@ -157,7 +158,7 @@ class ChannelSoundingManager(private val context: Context) {
       .build()
 
     val sessionConfig = SessionConfig.Builder()
-      .setRangingMeasurementsLimit(1000)
+      .setRangingMeasurementsLimit(65535)
       .setAngleOfArrivalNeeded(true)
       .setSensorFusionParams(sensorFusionParams)
       .build()
@@ -217,30 +218,26 @@ class ChannelSoundingManager(private val context: Context) {
   @RequiresApi(Build.VERSION_CODES.BAKLAVA)
   fun stopChannelSounding(
     bluetoothAddress: String,
-    onClosed: (suspend () -> Unit)? = null
+    onClosed: (() -> Unit)? = null
   ) {
     val session = rangingSession ?: return
 
     deviceAddress = null
 
-    CoroutineScope(Dispatchers.IO).launch {
-      try {
-        session.stop()
-        // Wait for onStopped() or onClosed() before closing
-        delay(1000) // Give the system time to propagate onStopped
-        withContext(Dispatchers.Main) {
-          session.close()
-          rangingSession = null
-          rangingManager?.unregisterCapabilitiesCallback(rangingCapabilityCallback)
-          delay(1500)
-          onClosed?.let { it() } ?: run {
-            clear(bluetoothAddress)
-          }
-        }
-      } catch (e: Exception) {
-
-      }
+    try {
+      session.stop() // triggers onStopped/onClosed internally
+      session.close() // safe to call immediately after stop
+    } catch (e: Exception) {
+      Log.e("ChannelSounding", "Error stopping/closing session: ${e.message}")
     }
-  }
 
+    rangingSession = null
+
+    try {
+      rangingManager?.unregisterCapabilitiesCallback(rangingCapabilityCallback)
+    } catch (_: Exception) {}
+
+    clear(bluetoothAddress)
+    onClosed?.invoke()
+  }
 }
