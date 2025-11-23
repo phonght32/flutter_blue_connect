@@ -1,5 +1,3 @@
-import 'dart:ffi';
-
 import 'package:flutter/services.dart';
 
 enum FlutterBlueLinkLayerState {
@@ -39,6 +37,10 @@ enum FlutterBlueGapEvent {
   disconnected,
   encryptionStateChanged,
   bondStateChanged,
+  channelSoundingOpened,
+  channelSoundingStarted,
+  channelSoundingStopped,
+  channelSoundingClosed,
   channelSoundingDataReady
 }
 
@@ -150,6 +152,9 @@ class FlutterBlueDevice {
   }
 }
 
+
+
+
 /// Represents a structured Bluetooth event
 class FlutterBlueEvent {
   final FlutterBlueLayer layer;
@@ -200,6 +205,10 @@ class FlutterBlueEvent {
           case 'disconnected': return FlutterBlueGapEvent.disconnected;
           case 'bondStateChanged': return FlutterBlueGapEvent.bondStateChanged;
           case 'encryptionStateChanged': return FlutterBlueGapEvent.encryptionStateChanged;
+          case 'channelSoundingOpened': return FlutterBlueGapEvent.channelSoundingOpened;
+          case 'channelSoundingStarted': return FlutterBlueGapEvent.channelSoundingStarted;
+          case 'channelSoundingStopped': return FlutterBlueGapEvent.channelSoundingStopped;
+          case 'channelSoundingClosed': return FlutterBlueGapEvent.channelSoundingClosed;
           case 'channelSoundingDataReady': return FlutterBlueGapEvent.channelSoundingDataReady;
         }
         break;
@@ -318,8 +327,7 @@ class FlutterBlueConnect {
   static Future<Map<String, dynamic>?> generateLocalLeScOobData() async {
     final data = await _channel.invokeMethod<Map>('generateLocalLeScOobData');
     if (data != null) {
-      print("📡 Local OOB Data:");
-      data.forEach((k, v) => print("  $k: $v"));
+
     }
     return data?.map((k, v) => MapEntry(k, v.toString()));
   }

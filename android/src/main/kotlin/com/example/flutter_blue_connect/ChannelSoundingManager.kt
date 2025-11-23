@@ -35,7 +35,7 @@ class ChannelSoundingManager(private val context: Context) {
   private val rangingManager: RangingManager? = context.getSystemService(RangingManager::class.java)
   private var rangingSession: RangingSession? = null
   private lateinit var rangingCapabilityCallback: RangingManager.RangingCapabilitiesCallback
-  private var deviceAddress : String? = null
+  private var deviceAddress : String = ""
 
   /**
    * Checks if the app has the RANGING permission.
@@ -52,23 +52,15 @@ class ChannelSoundingManager(private val context: Context) {
     ) == PackageManager.PERMISSION_GRANTED
   }
 
-  /**
-   * Clears the data associated with the given device ID.
-   * This removes the entry from the internal map, effectively resetting the state for that device.
-   *
-   * @param deviceId The ID of the device whose data should be cleared.
-   */
-  fun clear(bluetoothAddress: String) {
-    if (deviceAddress == bluetoothAddress) {
-      deviceAddress = null
-    }
-  }
-
   // Implement all abstract methods of RangingSession.Callback
   private val rangingSessionCallback = @RequiresApi(Build.VERSION_CODES.BAKLAVA)
   object : RangingSession.Callback {
     override fun onOpened() {
-
+      BluetoothEventEmitter.emit(
+        "gap",
+        "channelSoundingOpened",
+        deviceAddress,
+      )
     }
 
     override fun onOpenFailed(reason: Int) {
@@ -80,7 +72,11 @@ class ChannelSoundingManager(private val context: Context) {
       peer: RangingDevice,
       technology: Int
     ) {
-
+      BluetoothEventEmitter.emit(
+        "gap",
+        "channelSoundingStarted",
+        deviceAddress,
+      )
     }
 
     override fun onResults(
@@ -115,6 +111,11 @@ class ChannelSoundingManager(private val context: Context) {
       peer: RangingDevice,
       technology: Int
     ) {
+      BluetoothEventEmitter.emit(
+        "gap",
+        "channelSoundingStopped",
+        deviceAddress,
+      )
 
     }
 
@@ -123,7 +124,13 @@ class ChannelSoundingManager(private val context: Context) {
       try {
         rangingManager?.unregisterCapabilitiesCallback(rangingCapabilityCallback)
       } catch (_: Exception) {}
-      deviceAddress = null
+      BluetoothEventEmitter.emit(
+        "gap",
+        "channelSoundingClosed",
+        deviceAddress,
+      )
+
+      deviceAddress = ""
     }
   }
 
@@ -222,8 +229,6 @@ class ChannelSoundingManager(private val context: Context) {
   ) {
     val session = rangingSession ?: return
 
-    deviceAddress = null
-
     try {
       session.stop() // triggers onStopped/onClosed internally
       session.close() // safe to call immediately after stop
@@ -237,7 +242,6 @@ class ChannelSoundingManager(private val context: Context) {
       rangingManager?.unregisterCapabilitiesCallback(rangingCapabilityCallback)
     } catch (_: Exception) {}
 
-    clear(bluetoothAddress)
     onClosed?.invoke()
   }
 }
