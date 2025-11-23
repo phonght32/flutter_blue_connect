@@ -183,7 +183,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
         linkLayerConnectionTimeouts.remove(address)
 
         logMessage("info", "Connected to GATT server")
-        gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_BALANCED)
+//        gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_LOW_POWER)
 //        gatt.discoverServices()
 
         val bondState = when (gatt.device.bondState) {
