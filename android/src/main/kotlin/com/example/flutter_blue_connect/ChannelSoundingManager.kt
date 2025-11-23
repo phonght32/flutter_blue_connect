@@ -154,12 +154,12 @@ class ChannelSoundingManager(private val context: Context) {
       .build()
 
     val sensorFusionParams = SensorFusionParams.Builder()
-      .setSensorFusionEnabled(true)
+      .setSensorFusionEnabled(false)
       .build()
 
     val sessionConfig = SessionConfig.Builder()
-      .setRangingMeasurementsLimit(65535)
-      .setAngleOfArrivalNeeded(true)
+//      .setRangingMeasurementsLimit(65535)
+      .setAngleOfArrivalNeeded(false)
       .setSensorFusionParams(sensorFusionParams)
       .build()
 
