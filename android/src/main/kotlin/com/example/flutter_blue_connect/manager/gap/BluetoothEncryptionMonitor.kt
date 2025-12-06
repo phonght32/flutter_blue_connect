@@ -21,7 +21,7 @@ object BluetoothEncryptionMonitor {
           val address = deviceInfo["bluetoothAddress"] as? String ?: ""
 
           if (address.isNotEmpty()) {
-            val gatt = FlutterBlueConnectPlugin.activeGattConnections[address]
+            val gatt = FlutterBlueGapManager.activeGattConnections[address]
 
             if (gatt != null) {
               val device = gatt.device

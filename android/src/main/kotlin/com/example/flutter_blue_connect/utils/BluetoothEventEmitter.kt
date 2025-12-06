@@ -21,7 +21,7 @@ object BluetoothEventEmitter {
             "deviceInfo" to FlutterBlueDeviceManager.getMap()
         ) + data
 
-        Log.i("BluetoothEventEmitter", "emit event {layer=$layer, event=$event, address=$bluetoothAddress}")
+        FlutterBlueLog.info("Emit event {layer=$layer, event=$event, address=$bluetoothAddress}")
 
         Handler(Looper.getMainLooper()).post {
             eventSink?.success(payload)

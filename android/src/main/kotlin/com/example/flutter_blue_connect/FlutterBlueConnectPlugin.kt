@@ -66,43 +66,24 @@ import android.ranging.RangingManager;
  */
 class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
 
-  data class ScannedDevice(
-    val device: BluetoothDevice,
-    val advData: List<Int>,
-    val rssi: Int,
-    val timestamp: Long
-  )
-
-
   // Channels for communication with Flutter
   private lateinit var methodChannel: MethodChannel
-  private lateinit var scanChannel: EventChannel
   private lateinit var bluetoothEventChannel: EventChannel
   private lateinit var appContext: Context
 
   // Bluetooth adapter reference
   private var bluetoothAdapter: BluetoothAdapter? = null
   private var bluetoothManager: BluetoothManager? = null
-//  private var activeGattConnections = ConcurrentHashMap<String, BluetoothGatt>()
 
-  companion object {
-    // 🔧 make it accessible from anywhere
-    val activeGattConnections = ConcurrentHashMap<String, BluetoothGatt>()
-  }
+
 
   // Sink for sending scan results to Flutter
-  private var scanResultSink: EventChannel.EventSink? = null
   private var bluetoothEventSink: EventChannel.EventSink? = null
 
-  // Maps to store scanned Bluetooth devices with their timestamps
-  private val mapScannedBluetoothDevice = ConcurrentHashMap<String, ScannedDevice>()
-  private var mapPreviousScannedBluetoothDevice = emptyMap<String, ScannedDevice>()
 
-  private val pendingConnectionResults = mutableMapOf<String, MethodChannel.Result>()
-  private val linkLayerConnectionTimeouts = mutableMapOf<String, Pair<Handler, Runnable>>()
   private val l2capConnectionTimeouts = mutableMapOf<String, Pair<Handler, Runnable>>()
 
-  private var scanRefreshTimeMs: Int = 500
+
 
   private var generatedOobData: Map<String, Any>? = null
 
@@ -154,169 +135,11 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
     }
   }
 
-  /**
-   * Handler and Runnable to periodically clean up stale Bluetooth devices.
-   *
-   * The cleanup process runs every second (1000ms) and removes devices
-   * that have not been seen for more than 2 seconds (2000ms).
-   * This ensures the scanned device list stays up-to-date and doesn't
-   * include outdated devices.
-   */
-  private val handlerTimerCleanup = Handler(Looper.getMainLooper())
-  private val runnableTimerCleanup = object : Runnable {
-    override fun run() {
-      val currentTime = System.currentTimeMillis()
-      mapScannedBluetoothDevice.entries.removeIf { (_, v) ->
-        (currentTime - v.timestamp) > 2000
-      }
-      handlerTimerCleanup.postDelayed(this, 1000)
-    }
-  }
 
-  val gattCallback = object : BluetoothGattCallback() {
-    override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
-      val address = gatt.device.address
-      val pendingResult = pendingConnectionResults.remove(address)
 
-      if (newState == BluetoothProfile.STATE_CONNECTED) {
-        linkLayerConnectionTimeouts[address]?.first?.removeCallbacks(linkLayerConnectionTimeouts[address]?.second!!)
-        linkLayerConnectionTimeouts.remove(address)
 
-        logMessage("info", "Connected to GATT server")
-//        gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_LOW_POWER)
-//        gatt.discoverServices()
 
-        val bondState = when (gatt.device.bondState) {
-          BluetoothDevice.BOND_BONDING -> "bonding"
-          BluetoothDevice.BOND_BONDED -> "bonded"
-          else -> "notBonded"
-        }
 
-        val encryptState = try {
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val method = BluetoothGatt::class.java.getMethod("isEncrypted")
-            val result = method.invoke(gatt) as? Boolean ?: false
-            if (result) "encrypted" else "notEncrypted"
-          } else {
-            if (gatt.device.bondState == BluetoothDevice.BOND_BONDED) "encrypted" else "notEncrypted"
-          }
-        } catch (e: Exception) {
-          "notEncrypted"
-        }
-
-        pendingResult?.success("Connected to $address")
-
-        FlutterBlueDeviceManager.updateDevice(
-          name = gatt.device.name,
-          address = address,
-          linkLayerState = "connected",
-          l2capState = "disconnected",
-          bondState = bondState,
-          encryptionState = encryptState
-        )
-
-        BluetoothEventEmitter.emit(
-          "gap",
-          "connected",
-          address,
-        )
-
-      } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-        BluetoothEncryptionMonitor.resetState()
-
-        linkLayerConnectionTimeouts.remove(address)
-
-        logMessage("info", "Disconnected from GATT server")
-
-        // If connection failed before success
-        pendingResult?.error("CONNECTION_FAILED", "Failed to connect to $address", null)
-
-        BluetoothEventEmitter.emit("gap", "disconnected", address)
-
-        // Only clear device after event disconnected was emitted
-        FlutterBlueDeviceManager.clear()
-      }
-    }
-
-    override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-      if (status == BluetoothGatt.GATT_SUCCESS) {
-        logMessage("info", "Services discovered: ${gatt.services}")
-
-        BluetoothEventEmitter.emit("gatt", "servicesDiscovered", gatt.device.address, mapOf(
-          "services" to gatt.services.map { it.uuid.toString() }
-        ))
-      }
-    }
-
-    override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
-      if (status == BluetoothGatt.GATT_SUCCESS) {
-        logMessage("info", "Read characteristic: ${characteristic.uuid}, value: ${characteristic.value}")
-
-        BluetoothEventEmitter.emit("gatt", "read", gatt.device.address, mapOf(
-          "uuid" to characteristic.uuid.toString(),
-          "value" to characteristic.value.toList()
-        ))
-      }
-    }
-  }
-
-  /**
-   * Handler and Runnable to check for Bluetooth scan result changes every 500ms.
-   *
-   * This mechanism ensures that only **updated** device lists are sent to Flutter.
-   * The runnable compares the current scanned device list (`mapScannedBluetoothDevice`)
-   * with the previously stored snapshot (`mapPreviousScannedBluetoothDevice`).
-   * If the device list has changed, it triggers an event (`scanResultSink.success()`)
-   * to send new data to the Flutter side.
-   *
-   * Execution cycle:
-   * - Runs every 'scanRefreshTimeMs' to detect updates.
-   * - If changes are found, sends new scan results.
-   * - Otherwise, waits for the next scheduled check.
-   */
-
-  private val handlerScanResultChangedCheck = Handler(Looper.getMainLooper())
-  private val runnableScanResultChangedCheck = object : Runnable {
-    override fun run() {
-      // Check if the scanned device list has changed
-      val hasChanged = mapScannedBluetoothDevice != mapPreviousScannedBluetoothDevice
-      mapPreviousScannedBluetoothDevice = mapScannedBluetoothDevice.toMap()
-
-      // If there's a change, send updated device list to Flutter
-      if (hasChanged) {
-        val devicesList = mapScannedBluetoothDevice.values.map { scanned ->
-          mapOf(
-            "name" to (scanned.device.name ?: "Unnamed"),
-            "bluetoothAddress" to scanned.device.address,
-            "advData" to scanned.advData,
-            "rssi" to scanned.rssi
-          )
-        }
-        scanResultSink?.success(devicesList)
-      }
-      // Schedule next check
-      handlerScanResultChangedCheck.postDelayed(this, scanRefreshTimeMs.toLong()) // Schedule next execution
-    }
-  }
-
-  /**
-   * Callback function that is triggered when a Bluetooth scan result is found.
-   * Updates the device list with the latest timestamp.
-   */
-  private val scanCallback = object : ScanCallback() {
-    override fun onScanResult(callbackType: Int, result: ScanResult) {
-      val device = result.device
-      val advBytes = result.scanRecord?.bytes
-      val advData = advBytes?.map { it.toInt() and 0xFF } ?: emptyList()
-      val rssi = result.rssi
-
-      mapScannedBluetoothDevice[device.address] = ScannedDevice(
-        device,
-        advData,
-        rssi,
-        System.currentTimeMillis())
-    }
-  }
 
   fun listenL2capEvent(socket: BluetoothSocket, address: String) {
     CoroutineScope(Dispatchers.IO).launch {
@@ -520,28 +343,15 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
        * Handles method startscan.
        */
       "startScan" -> {
-        scanRefreshTimeMs = call.argument<Int>("refreshTimeMs") ?: 500
-        val scanner = bluetoothAdapter?.bluetoothLeScanner
-        val scanFilters = listOf<ScanFilter>()  // Apply filters if needed
-        val settings = ScanSettings.Builder()
-          .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-          .build()
-        scanner?.startScan(scanFilters, settings, scanCallback)
-
-        handlerScanResultChangedCheck.post(runnableScanResultChangedCheck)
-        handlerTimerCleanup?.postDelayed(runnableTimerCleanup!!, 1000)
-        result.success("Bluetooth scanning started.")
+        val scanRefreshTimeMs = call.argument<Int>("refreshTimeMs") ?: 500
+        FlutterBlueGapManager.startScan(scanRefreshTimeMs)
       }
 
       /**
        * Handles method stopScan.
        */
       "stopScan" -> {
-        val scanner = bluetoothAdapter?.bluetoothLeScanner
-        scanner?.stopScan(scanCallback)
-        handlerScanResultChangedCheck.removeCallbacks(runnableScanResultChangedCheck)
-        handlerTimerCleanup?.removeCallbacks(runnableTimerCleanup!!) // Stop the cleanup loop
-        result.success("Bluetooth scanning stopped.")
+        FlutterBlueGapManager.stopScan()
       }
 
       /**
@@ -550,40 +360,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
       "connect" -> {
         val bluetoothAddress = call.argument<String>("bluetoothAddress")
         val timeoutMillis = call.argument<Int>("timeout") ?: 10000
-
-        if (bluetoothAdapter?.isEnabled != true) {
-          result.error("BLUETOOTH_DISABLED", "Bluetooth is not enabled.", null)
-          return
-        }
-
-        if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-          return
-        }
-
-        val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
-        val gatt = device?.connectGatt(appContext, false, gattCallback)
-        if (gatt != null) {
-          activeGattConnections[device.address] = gatt
-          pendingConnectionResults[device.address] = result
-
-          val handler = Handler(Looper.getMainLooper())
-          val timeoutRunnable = Runnable {
-            pendingConnectionResults.remove(device.address)?.error(
-              "CONNECTION_TIMEOUT",
-              "Connection to ${device.address} timed out after ${timeoutMillis}ms",
-              null
-            )
-            gatt.disconnect()
-            gatt.close()
-            activeGattConnections.remove(device.address)
-          }
-
-          handler.postDelayed(timeoutRunnable, timeoutMillis.toLong())
-          linkLayerConnectionTimeouts[device.address] = Pair(handler, timeoutRunnable)
-        } else {
-          result.error("CONNECTION_FAILED", "Failed to initiate connection.", null)
-        }
+        FlutterBlueGapManager.connect(bluetoothAddress, timeoutMillis, result)
       }
 
       /**
@@ -591,75 +368,45 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
        */
       "disconnect" -> {
         val bluetoothAddress = call.argument<String>("bluetoothAddress")
-        if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-          return
-        }
-
-        val gatt = activeGattConnections[bluetoothAddress]
-        if (gatt == null) {
-          result.error("NOT_CONNECTED", "No active connection for $bluetoothAddress", null)
-          return
-        }
-
-        // Close L2CAP if open
-        activeL2capSockets[bluetoothAddress]?.let {
-          try {
-            it.close()
-          } catch (e: Exception) {
-            Log.w("L2CAPClose", "Failed to close L2CAP: ${e.message}")
-          }
-          activeL2capSockets.remove(bluetoothAddress)
-        }
-
-        // ✅ Just disconnect, don't close yet — let callback handle it
-        gatt.disconnect()
-
-        // Optional: close later after delay
-        Handler(Looper.getMainLooper()).postDelayed({
-          gatt.close()
-          activeGattConnections.remove(bluetoothAddress)
-        }, 500)
-
-        result.success("Disconnecting from $bluetoothAddress ...")
+        FlutterBlueGapManager.disconnect(bluetoothAddress)
       }
 
       /**
        * Handles method l2capChannelOpen.
        */
       "l2capChannelOpen" -> {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-          l2capChannelOpen(call, result)
-        } else {
-          result.error("UNSUPPORTED_VERSION", "L2CAP requires Android 10 or higher.", null)
-        }
+//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+//          l2capChannelOpen(call, result)
+//        } else {
+//          result.error("UNSUPPORTED_VERSION", "L2CAP requires Android 10 or higher.", null)
+//        }
       }
 
       /**
        * Handles method l2capChannelClose.
        */
       "l2capChannelClose" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-        if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-          return
-        }
-        l2capChannelClose(bluetoothAddress, result)
+//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+//        if (bluetoothAddress == null) {
+//          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+//          return
+//        }
+//        l2capChannelClose(bluetoothAddress, result)
       }
 
       /**
        * Handles method l2capSend.
        */
       "l2capSend" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-        val payload = call.argument<ByteArray>("data")
-
-        if (bluetoothAddress == null || payload == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress or data", null)
-          return
-        }
-
-        l2capSend(bluetoothAddress, payload, result)
+//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+//        val payload = call.argument<ByteArray>("data")
+//
+//        if (bluetoothAddress == null || payload == null) {
+//          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress or data", null)
+//          return
+//        }
+//
+//        l2capSend(bluetoothAddress, payload, result)
       }
 
       /**
@@ -667,225 +414,225 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
        * Prints ALL available Bluetooth methods including inherited ones.
        */
       "printAllBluetoothMethods" -> {
-        try {
-          val sb = StringBuilder()
-
-          // ========== BluetoothAdapter Methods ==========
-          sb.append("\n========== BluetoothAdapter ALL Methods ==========\n")
-
-          bluetoothAdapter?.javaClass?.methods?.sortedBy { it.name }?.forEach { method ->
-            sb.append("${method.name}(")
-            method.parameterTypes.forEachIndexed { index, param ->
-              sb.append(param.simpleName)
-              if (index < method.parameterTypes.size - 1) sb.append(", ")
-            }
-            sb.append("): ${method.returnType.simpleName}\n")
-          }
-
-          // ========== BluetoothDevice Methods ==========
-          sb.append("\n========== BluetoothDevice ALL Methods ==========\n")
-
-          val sampleDevice = bluetoothAdapter?.bondedDevices?.firstOrNull()
-            ?: bluetoothAdapter?.getRemoteDevice("00:00:00:00:00:00")
-
-          sampleDevice?.javaClass?.methods?.sortedBy { it.name }?.forEach { method ->
-            sb.append("${method.name}(")
-            method.parameterTypes.forEachIndexed { index, param ->
-              sb.append(param.simpleName)
-              if (index < method.parameterTypes.size - 1) sb.append(", ")
-            }
-            sb.append("): ${method.returnType.simpleName}\n")
-          }
-
-          // ========== OOB-Related Methods Only ==========
-          sb.append("\n========== OOB-Related Methods ==========\n")
-          sb.append("--- BluetoothAdapter ---\n")
-
-          bluetoothAdapter?.javaClass?.methods?.filter {
-            it.name.contains("oob", ignoreCase = true) ||
-              it.name.contains("pairing", ignoreCase = true) ||
-              it.name.contains("bond", ignoreCase = true)
-          }?.forEach { method ->
-            sb.append("${method.name}(")
-            method.parameterTypes.forEachIndexed { index, param ->
-              sb.append(param.simpleName)
-              if (index < method.parameterTypes.size - 1) sb.append(", ")
-            }
-            sb.append("): ${method.returnType.simpleName}\n")
-          }
-
-          sb.append("\n--- BluetoothDevice ---\n")
-          sampleDevice?.javaClass?.methods?.filter {
-            it.name.contains("oob", ignoreCase = true) ||
-              it.name.contains("pairing", ignoreCase = true) ||
-              it.name.contains("bond", ignoreCase = true)
-          }?.forEach { method ->
-            sb.append("${method.name}(")
-            method.parameterTypes.forEachIndexed { index, param ->
-              sb.append(param.simpleName)
-              if (index < method.parameterTypes.size - 1) sb.append(", ")
-            }
-            sb.append("): ${method.returnType.simpleName}\n")
-          }
-
-          // ========== Check for OobData class ==========
-          sb.append("\n========== OobData Class Check ==========\n")
-          try {
-            val oobDataClass = Class.forName("android.bluetooth.OobData")
-            sb.append("✅ OobData class EXISTS\n")
-            sb.append("Constructors:\n")
-            oobDataClass.constructors.forEach { constructor ->
-              sb.append("  OobData(")
-              constructor.parameterTypes.forEachIndexed { index, param ->
-                sb.append(param.simpleName)
-                if (index < constructor.parameterTypes.size - 1) sb.append(", ")
-              }
-              sb.append(")\n")
-            }
-            sb.append("Methods:\n")
-            oobDataClass.methods.sortedBy { it.name }.forEach { method ->
-              sb.append("  ${method.name}(")
-              method.parameterTypes.forEachIndexed { index, param ->
-                sb.append(param.simpleName)
-                if (index < method.parameterTypes.size - 1) sb.append(", ")
-              }
-              sb.append("): ${method.returnType.simpleName}\n")
-            }
-          } catch (e: ClassNotFoundException) {
-            sb.append("❌ OobData class NOT FOUND\n")
-          }
-
-          // ========== Check Android Version Info ==========
-          sb.append("\n========== Device Info ==========\n")
-          sb.append("Android Version: ${Build.VERSION.RELEASE}\n")
-          sb.append("SDK Int: ${Build.VERSION.SDK_INT}\n")
-          sb.append("Device: ${Build.MANUFACTURER} ${Build.MODEL}\n")
-
-          sb.append("\n==============================================\n")
-
-          val output = sb.toString()
-          logMessage("info", output)
-
-          result.success(mapOf(
-            "methods" to output
-          ))
-
-        } catch (e: Exception) {
-          logMessage("error", "Failed to print methods: ${e.message}")
-          result.error("PRINT_METHODS_ERROR", e.message, null)
-        }
+//        try {
+//          val sb = StringBuilder()
+//
+//          // ========== BluetoothAdapter Methods ==========
+//          sb.append("\n========== BluetoothAdapter ALL Methods ==========\n")
+//
+//          bluetoothAdapter?.javaClass?.methods?.sortedBy { it.name }?.forEach { method ->
+//            sb.append("${method.name}(")
+//            method.parameterTypes.forEachIndexed { index, param ->
+//              sb.append(param.simpleName)
+//              if (index < method.parameterTypes.size - 1) sb.append(", ")
+//            }
+//            sb.append("): ${method.returnType.simpleName}\n")
+//          }
+//
+//          // ========== BluetoothDevice Methods ==========
+//          sb.append("\n========== BluetoothDevice ALL Methods ==========\n")
+//
+//          val sampleDevice = bluetoothAdapter?.bondedDevices?.firstOrNull()
+//            ?: bluetoothAdapter?.getRemoteDevice("00:00:00:00:00:00")
+//
+//          sampleDevice?.javaClass?.methods?.sortedBy { it.name }?.forEach { method ->
+//            sb.append("${method.name}(")
+//            method.parameterTypes.forEachIndexed { index, param ->
+//              sb.append(param.simpleName)
+//              if (index < method.parameterTypes.size - 1) sb.append(", ")
+//            }
+//            sb.append("): ${method.returnType.simpleName}\n")
+//          }
+//
+//          // ========== OOB-Related Methods Only ==========
+//          sb.append("\n========== OOB-Related Methods ==========\n")
+//          sb.append("--- BluetoothAdapter ---\n")
+//
+//          bluetoothAdapter?.javaClass?.methods?.filter {
+//            it.name.contains("oob", ignoreCase = true) ||
+//              it.name.contains("pairing", ignoreCase = true) ||
+//              it.name.contains("bond", ignoreCase = true)
+//          }?.forEach { method ->
+//            sb.append("${method.name}(")
+//            method.parameterTypes.forEachIndexed { index, param ->
+//              sb.append(param.simpleName)
+//              if (index < method.parameterTypes.size - 1) sb.append(", ")
+//            }
+//            sb.append("): ${method.returnType.simpleName}\n")
+//          }
+//
+//          sb.append("\n--- BluetoothDevice ---\n")
+//          sampleDevice?.javaClass?.methods?.filter {
+//            it.name.contains("oob", ignoreCase = true) ||
+//              it.name.contains("pairing", ignoreCase = true) ||
+//              it.name.contains("bond", ignoreCase = true)
+//          }?.forEach { method ->
+//            sb.append("${method.name}(")
+//            method.parameterTypes.forEachIndexed { index, param ->
+//              sb.append(param.simpleName)
+//              if (index < method.parameterTypes.size - 1) sb.append(", ")
+//            }
+//            sb.append("): ${method.returnType.simpleName}\n")
+//          }
+//
+//          // ========== Check for OobData class ==========
+//          sb.append("\n========== OobData Class Check ==========\n")
+//          try {
+//            val oobDataClass = Class.forName("android.bluetooth.OobData")
+//            sb.append("✅ OobData class EXISTS\n")
+//            sb.append("Constructors:\n")
+//            oobDataClass.constructors.forEach { constructor ->
+//              sb.append("  OobData(")
+//              constructor.parameterTypes.forEachIndexed { index, param ->
+//                sb.append(param.simpleName)
+//                if (index < constructor.parameterTypes.size - 1) sb.append(", ")
+//              }
+//              sb.append(")\n")
+//            }
+//            sb.append("Methods:\n")
+//            oobDataClass.methods.sortedBy { it.name }.forEach { method ->
+//              sb.append("  ${method.name}(")
+//              method.parameterTypes.forEachIndexed { index, param ->
+//                sb.append(param.simpleName)
+//                if (index < method.parameterTypes.size - 1) sb.append(", ")
+//              }
+//              sb.append("): ${method.returnType.simpleName}\n")
+//            }
+//          } catch (e: ClassNotFoundException) {
+//            sb.append("❌ OobData class NOT FOUND\n")
+//          }
+//
+//          // ========== Check Android Version Info ==========
+//          sb.append("\n========== Device Info ==========\n")
+//          sb.append("Android Version: ${Build.VERSION.RELEASE}\n")
+//          sb.append("SDK Int: ${Build.VERSION.SDK_INT}\n")
+//          sb.append("Device: ${Build.MANUFACTURER} ${Build.MODEL}\n")
+//
+//          sb.append("\n==============================================\n")
+//
+//          val output = sb.toString()
+//          logMessage("info", output)
+//
+//          result.success(mapOf(
+//            "methods" to output
+//          ))
+//
+//        } catch (e: Exception) {
+//          logMessage("error", "Failed to print methods: ${e.message}")
+//          result.error("PRINT_METHODS_ERROR", e.message, null)
+//        }
       }
 
       "generateLocalLeScOobData" -> {
-        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-        if (bluetoothAdapter == null) {
-          result.error("NO_ADAPTER", "BluetoothAdapter not available", null)
-          return
-        }
-
-        try {
-          // Find the hidden method via reflection
-          val method = bluetoothAdapter.javaClass.declaredMethods.firstOrNull {
-            it.name == "generateLocalOobData"
-          }
-
-          if (method == null) {
-            result.error("METHOD_NOT_FOUND", "generateLocalOobData not available", null)
-            return
-          }
-
-          // Load hidden classes reflectively
-          val callbackClass = Class.forName("android.bluetooth.BluetoothAdapter\$OobDataCallback")
-          val oobDataClass = Class.forName("android.bluetooth.OobData")
-
-          // Build dynamic proxy for the callback
-          val callbackProxy = java.lang.reflect.Proxy.newProxyInstance(
-            callbackClass.classLoader,
-            arrayOf(callbackClass)
-          ) { _, method, args ->
-            if (method.name == "onOobData") {
-              val arg = args?.getOrNull(0)
-              Log.d("FlutterBlueConnect", "OOB callback arg type: ${arg?.javaClass?.name}")
-
-              if (oobDataClass.isInstance(arg)) {
-                val oobData = arg
-
-                fun getBytes(fn: String): ByteArray? = try {
-                  oobDataClass.getMethod(fn).invoke(oobData) as? ByteArray
-                } catch (e: Exception) {
-                  Log.e("FlutterBlueConnect", "Error calling $fn: ${e.message}")
-                  null
-                }
-
-                val map = mapOf(
-                  "confirmationHash" to (getBytes("getConfirmationHash")?.joinToString(",") ?: ""),
-                  "randomizerHash" to (getBytes("getRandomizerHash")?.joinToString(",") ?: ""),
-                  "deviceAddressWithType" to (getBytes("getDeviceAddressWithType")?.joinToString(",") ?: ""),
-                  "leTemporaryKey" to (getBytes("getLeTemporaryKey")?.joinToString(",") ?: "")
-                )
-
-                Handler(Looper.getMainLooper()).post {
-                  Log.d("FlutterBlueConnect", "✅ OOB DATA GENERATED: $map")
-                  result.success(map)
-                }
-              } else {
-                Log.w("FlutterBlueConnect", "OOB callback returned unexpected type: ${arg?.javaClass}")
-                Handler(Looper.getMainLooper()).post {
-                  result.error("NULL_OOB", "OOB callback returned invalid type", null)
-                }
-              }
-            }
-            null
-          }
-
-          // Inline Executor proxy
-          val executorInterface = Class.forName("java.util.concurrent.Executor")
-          val executorProxy = java.lang.reflect.Proxy.newProxyInstance(
-            executorInterface.classLoader,
-            arrayOf(executorInterface)
-          ) { _, m, args ->
-            if (m.name == "execute") {
-              val runnable = args?.getOrNull(0) as? Runnable
-              runnable?.run()
-            }
-            null
-          }
-
-          // TRANSPORT_LE = 2
-          method.invoke(bluetoothAdapter, 2, executorProxy, callbackProxy)
-
-        } catch (e: Exception) {
-          result.error("OOB_ERROR", e.toString(), null)
-        }
+//        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+//        if (bluetoothAdapter == null) {
+//          result.error("NO_ADAPTER", "BluetoothAdapter not available", null)
+//          return
+//        }
+//
+//        try {
+//          // Find the hidden method via reflection
+//          val method = bluetoothAdapter.javaClass.declaredMethods.firstOrNull {
+//            it.name == "generateLocalOobData"
+//          }
+//
+//          if (method == null) {
+//            result.error("METHOD_NOT_FOUND", "generateLocalOobData not available", null)
+//            return
+//          }
+//
+//          // Load hidden classes reflectively
+//          val callbackClass = Class.forName("android.bluetooth.BluetoothAdapter\$OobDataCallback")
+//          val oobDataClass = Class.forName("android.bluetooth.OobData")
+//
+//          // Build dynamic proxy for the callback
+//          val callbackProxy = java.lang.reflect.Proxy.newProxyInstance(
+//            callbackClass.classLoader,
+//            arrayOf(callbackClass)
+//          ) { _, method, args ->
+//            if (method.name == "onOobData") {
+//              val arg = args?.getOrNull(0)
+//              Log.d("FlutterBlueConnect", "OOB callback arg type: ${arg?.javaClass?.name}")
+//
+//              if (oobDataClass.isInstance(arg)) {
+//                val oobData = arg
+//
+//                fun getBytes(fn: String): ByteArray? = try {
+//                  oobDataClass.getMethod(fn).invoke(oobData) as? ByteArray
+//                } catch (e: Exception) {
+//                  Log.e("FlutterBlueConnect", "Error calling $fn: ${e.message}")
+//                  null
+//                }
+//
+//                val map = mapOf(
+//                  "confirmationHash" to (getBytes("getConfirmationHash")?.joinToString(",") ?: ""),
+//                  "randomizerHash" to (getBytes("getRandomizerHash")?.joinToString(",") ?: ""),
+//                  "deviceAddressWithType" to (getBytes("getDeviceAddressWithType")?.joinToString(",") ?: ""),
+//                  "leTemporaryKey" to (getBytes("getLeTemporaryKey")?.joinToString(",") ?: "")
+//                )
+//
+//                Handler(Looper.getMainLooper()).post {
+//                  Log.d("FlutterBlueConnect", "✅ OOB DATA GENERATED: $map")
+//                  result.success(map)
+//                }
+//              } else {
+//                Log.w("FlutterBlueConnect", "OOB callback returned unexpected type: ${arg?.javaClass}")
+//                Handler(Looper.getMainLooper()).post {
+//                  result.error("NULL_OOB", "OOB callback returned invalid type", null)
+//                }
+//              }
+//            }
+//            null
+//          }
+//
+//          // Inline Executor proxy
+//          val executorInterface = Class.forName("java.util.concurrent.Executor")
+//          val executorProxy = java.lang.reflect.Proxy.newProxyInstance(
+//            executorInterface.classLoader,
+//            arrayOf(executorInterface)
+//          ) { _, m, args ->
+//            if (m.name == "execute") {
+//              val runnable = args?.getOrNull(0) as? Runnable
+//              runnable?.run()
+//            }
+//            null
+//          }
+//
+//          // TRANSPORT_LE = 2
+//          method.invoke(bluetoothAdapter, 2, executorProxy, callbackProxy)
+//
+//        } catch (e: Exception) {
+//          result.error("OOB_ERROR", e.toString(), null)
+//        }
       }
 
       /**
        * Handles method startPairing.
        */
       "startPairing" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-
-        if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-          return
-        }
-
-        val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
-        if (device == null) {
-          result.error("DEVICE_NOT_FOUND", "Device not found for address $bluetoothAddress", null)
-          return
-        }
-
-        try {
-          val success = device.createBond()
-          if (success) {
-            result.success("Pairing initiated with $bluetoothAddress")
-          } else {
-            result.error("PAIRING_FAILED", "createBond() returned false", null)
-          }
-        } catch (e: Exception) {
-          result.error("PAIRING_ERROR", e.message, null)
-        }
+//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+//
+//        if (bluetoothAddress == null) {
+//          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+//          return
+//        }
+//
+//        val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
+//        if (device == null) {
+//          result.error("DEVICE_NOT_FOUND", "Device not found for address $bluetoothAddress", null)
+//          return
+//        }
+//
+//        try {
+//          val success = device.createBond()
+//          if (success) {
+//            result.success("Pairing initiated with $bluetoothAddress")
+//          } else {
+//            result.error("PAIRING_FAILED", "createBond() returned false", null)
+//          }
+//        } catch (e: Exception) {
+//          result.error("PAIRING_ERROR", e.message, null)
+//        }
       }
 
       /**
@@ -893,101 +640,101 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
        * Initiates Out-of-Band pairing using provided OOB data.
        */
       "startPairingOob" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-        val oobData = call.argument<ByteArray>("oobData")
-
-        if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-          return
-        }
-
-        val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
-        if (device == null) {
-          result.error("DEVICE_NOT_FOUND", "Device not found for address $bluetoothAddress", null)
-          return
-        }
-
-        try {
-          // Check Android version for OOB support
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-
-            // For Android 10 (Q) and above - OOB pairing with data
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && oobData != null) {
-              logMessage("info", "Starting OOB pairing with data for $bluetoothAddress")
-
-              // Parse OOB data - typically contains confirmation value and randomizer
-              // Format depends on your OOB exchange mechanism
-              if (oobData.size >= 32) {
-                val confirmationValue = oobData.copyOfRange(0, 16)
-                val randomizer = oobData.copyOfRange(16, 32)
-
-                // Use reflection to access setOobData method
-                val method = device.javaClass.getMethod(
-                  "setOobData",
-                  ByteArray::class.java,
-                  ByteArray::class.java
-                )
-                method.invoke(device, confirmationValue, randomizer)
-
-                logMessage("info", "OOB data set successfully")
-              } else {
-                result.error("INVALID_OOB_DATA", "OOB data must be at least 32 bytes", null)
-                return
-              }
-            }
-
-            // Initiate the bonding process
-            val success = device.createBond()
-
-            if (success) {
-              logMessage("info", "OOB pairing initiated with $bluetoothAddress")
-              result.success("OOB pairing initiated with $bluetoothAddress")
-            } else {
-              logMessage("error", "createBond() returned false for $bluetoothAddress")
-              result.error("PAIRING_FAILED", "createBond() returned false", null)
-            }
-
-          } else {
-            result.error(
-              "UNSUPPORTED_VERSION",
-              "OOB pairing requires Android 4.4 (KitKat) or higher",
-              null
-            )
-          }
-
-        } catch (e: NoSuchMethodException) {
-          logMessage("error", "OOB method not available: ${e.message}")
-          result.error("METHOD_NOT_AVAILABLE", "OOB pairing method not available on this device", null)
-        } catch (e: Exception) {
-          logMessage("error", "OOB pairing error: ${e.message}")
-          result.error("PAIRING_ERROR", e.message, null)
-        }
+//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+//        val oobData = call.argument<ByteArray>("oobData")
+//
+//        if (bluetoothAddress == null) {
+//          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+//          return
+//        }
+//
+//        val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
+//        if (device == null) {
+//          result.error("DEVICE_NOT_FOUND", "Device not found for address $bluetoothAddress", null)
+//          return
+//        }
+//
+//        try {
+//          // Check Android version for OOB support
+//          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+//
+//            // For Android 10 (Q) and above - OOB pairing with data
+//            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && oobData != null) {
+//              logMessage("info", "Starting OOB pairing with data for $bluetoothAddress")
+//
+//              // Parse OOB data - typically contains confirmation value and randomizer
+//              // Format depends on your OOB exchange mechanism
+//              if (oobData.size >= 32) {
+//                val confirmationValue = oobData.copyOfRange(0, 16)
+//                val randomizer = oobData.copyOfRange(16, 32)
+//
+//                // Use reflection to access setOobData method
+//                val method = device.javaClass.getMethod(
+//                  "setOobData",
+//                  ByteArray::class.java,
+//                  ByteArray::class.java
+//                )
+//                method.invoke(device, confirmationValue, randomizer)
+//
+//                logMessage("info", "OOB data set successfully")
+//              } else {
+//                result.error("INVALID_OOB_DATA", "OOB data must be at least 32 bytes", null)
+//                return
+//              }
+//            }
+//
+//            // Initiate the bonding process
+//            val success = device.createBond()
+//
+//            if (success) {
+//              logMessage("info", "OOB pairing initiated with $bluetoothAddress")
+//              result.success("OOB pairing initiated with $bluetoothAddress")
+//            } else {
+//              logMessage("error", "createBond() returned false for $bluetoothAddress")
+//              result.error("PAIRING_FAILED", "createBond() returned false", null)
+//            }
+//
+//          } else {
+//            result.error(
+//              "UNSUPPORTED_VERSION",
+//              "OOB pairing requires Android 4.4 (KitKat) or higher",
+//              null
+//            )
+//          }
+//
+//        } catch (e: NoSuchMethodException) {
+//          logMessage("error", "OOB method not available: ${e.message}")
+//          result.error("METHOD_NOT_AVAILABLE", "OOB pairing method not available on this device", null)
+//        } catch (e: Exception) {
+//          logMessage("error", "OOB pairing error: ${e.message}")
+//          result.error("PAIRING_ERROR", e.message, null)
+//        }
       }
 
       "startEncryptConnection" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-
-        val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
-        if (device == null) {
-          result.error("DEVICE_NOT_FOUND", "Device not found for address $bluetoothAddress", null)
-          return
-        }
-
-        try {
-          // Reflection để gọi hidden API
-          val method = device.javaClass.getDeclaredMethod("startEncryptConnection")
-          method.isAccessible = true
-          val success = method.invoke(device) as Boolean
-
-          if (success) {
-            result.success("Encrypt connection started for $bluetoothAddress")
-          } else {
-            result.error("ENCRYPT_FAILED", "startEncryptConnection() returned false", null)
-          }
-
-        } catch (e: Exception) {
-          result.error("ENCRYPT_FAILED", e.message, null)
-        }
+//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+//
+//        val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
+//        if (device == null) {
+//          result.error("DEVICE_NOT_FOUND", "Device not found for address $bluetoothAddress", null)
+//          return
+//        }
+//
+//        try {
+//          // Reflection để gọi hidden API
+//          val method = device.javaClass.getDeclaredMethod("startEncryptConnection")
+//          method.isAccessible = true
+//          val success = method.invoke(device) as Boolean
+//
+//          if (success) {
+//            result.success("Encrypt connection started for $bluetoothAddress")
+//          } else {
+//            result.error("ENCRYPT_FAILED", "startEncryptConnection() returned false", null)
+//          }
+//
+//        } catch (e: Exception) {
+//          result.error("ENCRYPT_FAILED", e.message, null)
+//        }
       }
 
 
@@ -995,71 +742,71 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
        * Handles remove bond.
        */
       "deleteBond" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-
-        if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-          return
-        }
-
-        try {
-          val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
-
-          val method = device?.javaClass?.getMethod("removeBond")
-          val success = method?.invoke(device) as Boolean
-
-          if (success) {
-            Log.i("FlutterBlueConnect", "removeBond($bluetoothAddress): success")
-            result.success(true)
-          } else {
-            Log.w("FlutterBlueConnect", "removeBond($bluetoothAddress): failed")
-            result.success(false)
-          }
-        } catch (e: Exception) {
-          Log.e("FlutterBlueConnect", "Error removing bond for $bluetoothAddress", e)
-          result.error("REMOVE_BOND_ERROR", e.message, null)
-        }
+//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+//
+//        if (bluetoothAddress == null) {
+//          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+//          return
+//        }
+//
+//        try {
+//          val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
+//
+//          val method = device?.javaClass?.getMethod("removeBond")
+//          val success = method?.invoke(device) as Boolean
+//
+//          if (success) {
+//            Log.i("FlutterBlueConnect", "removeBond($bluetoothAddress): success")
+//            result.success(true)
+//          } else {
+//            Log.w("FlutterBlueConnect", "removeBond($bluetoothAddress): failed")
+//            result.success(false)
+//          }
+//        } catch (e: Exception) {
+//          Log.e("FlutterBlueConnect", "Error removing bond for $bluetoothAddress", e)
+//          result.error("REMOVE_BOND_ERROR", e.message, null)
+//        }
       }
 
       "startChannelSounding" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-        if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-          return
-        }
-
-        if (channelSoundingManager == null) {
-          result.error("MANAGER_NOT_INITIALIZED", "ChannelSoundingManager not initialized", null)
-          return
-        }
-
-        try {
-          channelSoundingManager?.startChannelSounding(bluetoothAddress)
-
-          result.success("Channel sounding started for $bluetoothAddress")
-        } catch (e: Exception) {
-          result.error("START_FAILED", e.message, null)
-        }
+//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+//        if (bluetoothAddress == null) {
+//          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+//          return
+//        }
+//
+//        if (channelSoundingManager == null) {
+//          result.error("MANAGER_NOT_INITIALIZED", "ChannelSoundingManager not initialized", null)
+//          return
+//        }
+//
+//        try {
+//          channelSoundingManager?.startChannelSounding(bluetoothAddress)
+//
+//          result.success("Channel sounding started for $bluetoothAddress")
+//        } catch (e: Exception) {
+//          result.error("START_FAILED", e.message, null)
+//        }
       }
 
       "stopChannelSounding" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-        if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-          return
-        }
-
-        if (channelSoundingManager == null) {
-          result.error("MANAGER_NOT_INITIALIZED", "ChannelSoundingManager not initialized", null)
-          return
-        }
-
-        try {
-          channelSoundingManager?.stopChannelSounding(bluetoothAddress)
-          result.success("Channel sounding stopped for $bluetoothAddress")
-        } catch (e: Exception) {
-          result.error("STOP_FAILED", e.message, null)
-        }
+//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+//        if (bluetoothAddress == null) {
+//          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+//          return
+//        }
+//
+//        if (channelSoundingManager == null) {
+//          result.error("MANAGER_NOT_INITIALIZED", "ChannelSoundingManager not initialized", null)
+//          return
+//        }
+//
+//        try {
+//          channelSoundingManager?.stopChannelSounding(bluetoothAddress)
+//          result.success("Channel sounding stopped for $bluetoothAddress")
+//        } catch (e: Exception) {
+//          result.error("STOP_FAILED", e.message, null)
+//        }
       }
 
       /**
@@ -1083,15 +830,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
     bluetoothManager = binding.applicationContext.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     bluetoothAdapter = bluetoothManager?.adapter
 
-    scanChannel = EventChannel(binding.binaryMessenger, "flutter_blue_connect_scan")
-    scanChannel.setStreamHandler(object : EventChannel.StreamHandler {
-      override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-        scanResultSink = events
-      }
-      override fun onCancel(arguments: Any?) {
-        scanResultSink = null
-      }
-    })
+    FlutterBlueGapManager.onAttachedToEngine(binding)
 
     bluetoothEventChannel = EventChannel(binding.binaryMessenger, "channel_bluetooth_events")
     bluetoothEventChannel.setStreamHandler(object : EventChannel.StreamHandler {
@@ -1121,11 +860,11 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
    */
   override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     methodChannel.setMethodCallHandler(null)
-    scanResultSink = null
+
     bluetoothEventSink = null
 
-    handlerScanResultChangedCheck.removeCallbacks(runnableScanResultChangedCheck)
-    handlerTimerCleanup.removeCallbacks(runnableTimerCleanup)
+    FlutterBlueGapManager.onDetachedFromEngine()
+
 
     // Stop checking when plugin is detached
     BluetoothEncryptionMonitor.stop()
