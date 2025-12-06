@@ -9,11 +9,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 
-import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
+import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothSocket
@@ -27,7 +27,6 @@ import java.util.concurrent.ConcurrentHashMap
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
-
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 
 object FlutterBlueGapManager {
@@ -324,6 +323,8 @@ object FlutterBlueGapManager {
 			FlutterBlueLog.error("Cannot disconnect, reason: NO_CONNECTION")
 			return
 		}
+
+		FlutterBlueL2capManager.closeChannel(bluetoothAddress, false)
 
 //		// Close L2CAP if open
 //		activeL2capSockets[bluetoothAddress]?.let {
