@@ -73,37 +73,6 @@ object FlutterBlueL2capManager {
     }
   }
 
-  @RequiresApi(Build.VERSION_CODES.Q)
-  fun l2capSend(
-    bluetoothAddress: String,
-    data: ByteArray,
-    result: MethodChannel.Result
-  ) {
-    val socket = activeL2capSockets[bluetoothAddress]
-    if (socket == null) {
-      FlutterBlueLog.error("No active L2CAP channel for $bluetoothAddress")
-      return
-    }
-
-    CoroutineScope(Dispatchers.IO).launch {
-      try {
-        val hexString = data.joinToString(" ") { "%02X".format(it) }
-
-        FlutterBlueLog.info("L2CAP TX | btaddr=$bluetoothAddress, len=${data.size}, payload=$hexString")
-
-        socket.outputStream.write(data)
-        socket.outputStream.flush()
-
-        withContext(Dispatchers.Main) {
-          result.success("Sent ${data.size} bytes to $bluetoothAddress")
-        }
-      } catch (e: IOException) {
-        withContext(Dispatchers.Main) {
-          FlutterBlueLog.error("Failed to send data: ${e.message}")
-        }
-      }
-    }
-  }
 
   @RequiresApi(Build.VERSION_CODES.Q)
   fun openChannel(bluetoothAddress: String, psm: Int, secure: Boolean, timeout: Int) {
@@ -212,6 +181,34 @@ object FlutterBlueL2capManager {
       } catch (e: Exception) {
         withContext(Dispatchers.Main) {
           FlutterBlueLog.error("Failed to close L2CAP: ${e.message}")
+        }
+      }
+    }
+  }
+
+  @RequiresApi(Build.VERSION_CODES.Q)
+  fun sendData(bluetoothAddress: String, data: ByteArray) {
+    val socket = activeL2capSockets[bluetoothAddress]
+    if (socket == null) {
+      FlutterBlueLog.error("No active L2CAP channel for $bluetoothAddress")
+      return
+    }
+
+    CoroutineScope(Dispatchers.IO).launch {
+      try {
+        val hexString = data.joinToString(" ") { "%02X".format(it) }
+
+        FlutterBlueLog.info("L2CAP TX | btaddr=$bluetoothAddress, len=${data.size}, payload=$hexString")
+
+        socket.outputStream.write(data)
+        socket.outputStream.flush()
+
+        withContext(Dispatchers.Main) {
+          FlutterBlueLog.info("Sent ${data.size} bytes to $bluetoothAddress")
+        }
+      } catch (e: IOException) {
+        withContext(Dispatchers.Main) {
+          FlutterBlueLog.error("Failed to send data: ${e.message}")
         }
       }
     }

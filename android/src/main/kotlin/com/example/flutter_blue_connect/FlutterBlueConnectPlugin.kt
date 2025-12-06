@@ -161,41 +161,27 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
    */
   override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
     when (call.method) {
-      /**
-       * Handles method startscan.
-       */
+
       "startScan" -> {
         val scanRefreshTimeMs = call.argument<Int>("refreshTimeMs") ?: 500
         FlutterBlueGapManager.startScan(scanRefreshTimeMs)
       }
 
-      /**
-       * Handles method stopScan.
-       */
       "stopScan" -> {
         FlutterBlueGapManager.stopScan()
       }
 
-      /**
-       * Handles method connect.
-       */
       "connect" -> {
         val bluetoothAddress = call.argument<String>("bluetoothAddress")
         val timeoutMillis = call.argument<Int>("timeout") ?: 10000
         FlutterBlueGapManager.connect(bluetoothAddress, timeoutMillis, result)
       }
 
-      /**
-       * Handles method disconnect.
-       */
       "disconnect" -> {
         val bluetoothAddress = call.argument<String>("bluetoothAddress")
         FlutterBlueGapManager.disconnect(bluetoothAddress)
       }
 
-      /**
-       * Handles method l2capChannelOpen.
-       */
       "l2capChannelOpen" -> {
         val bluetoothAddress = call.argument<String>("bluetoothAddress")
         val psm = call.argument<Int>("psm") ?: return result.error("INVALID_ARGUMENT", "Missing PSM parameter.", null)
@@ -210,38 +196,28 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
         FlutterBlueL2capManager.openChannel(bluetoothAddress, psm, secure, timeoutMillis)
       }
 
-      /**
-       * Handles method l2capChannelClose.
-       */
       "l2capChannelClose" -> {
         val bluetoothAddress = call.argument<String>("bluetoothAddress")
         if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+          FlutterBlueLog.error("Missing bluetoothAddress parameter.")
           return
         }
 
         FlutterBlueL2capManager.closeChannel(bluetoothAddress, true)
       }
 
-      /**
-       * Handles method l2capSend.
-       */
       "l2capSend" -> {
-//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-//        val payload = call.argument<ByteArray>("data")
-//
-//        if (bluetoothAddress == null || payload == null) {
-//          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress or data", null)
-//          return
-//        }
-//
-//        l2capSend(bluetoothAddress, payload, result)
+        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+        val payload = call.argument<ByteArray>("data")
+
+        if (bluetoothAddress == null || payload == null) {
+          FlutterBlueLog.error("Missing bluetoothAddress or data")
+          return
+        }
+
+        FlutterBlueL2capManager.sendData(bluetoothAddress, payload)
       }
 
-      /**
-       * Handles method printAllBluetoothMethods.
-       * Prints ALL available Bluetooth methods including inherited ones.
-       */
       "printAllBluetoothMethods" -> {
 //        try {
 //          val sb = StringBuilder()
