@@ -370,11 +370,24 @@ object FlutterBlueGapManager {
 				scanResultSink = null
 			}
 		})
+
+		val filter = IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+		appContext.registerReceiver(bondStateReceiver, filter)
+
+		BluetoothEncryptionMonitor.start()
 	}
 
 	fun onDetachedFromEngine() {
 		scanResultSink = null
 		handlerScanResultChangedCheck.removeCallbacks(runnableScanResultChangedCheck)
 		handlerTimerCleanup.removeCallbacks(runnableTimerCleanup)
+
+		BluetoothEncryptionMonitor.stop()
+
+		try {
+			appContext.unregisterReceiver(bondStateReceiver)
+		} catch (e: IllegalArgumentException) {
+			Log.w("FlutterBlueConnect", "Receiver already unregistered: ${e.message}")
+		}
 	}
 }

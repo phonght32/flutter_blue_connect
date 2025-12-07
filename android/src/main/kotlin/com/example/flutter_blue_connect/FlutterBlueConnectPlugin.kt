@@ -80,43 +80,6 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
   // Sink for sending scan results to Flutter
   private var bluetoothEventSink: EventChannel.EventSink? = null
 
-  private val bondStateReceiver = object : BroadcastReceiver() {
-    override fun onReceive(context: Context?, intent: Intent?) {
-      if (BluetoothDevice.ACTION_BOND_STATE_CHANGED == intent?.action) {
-        val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
-        val bondState = intent.getIntExtra(
-          BluetoothDevice.EXTRA_BOND_STATE,
-          BluetoothDevice.BOND_NONE
-        )
-
-        val stateStr = when (bondState) {
-          BluetoothDevice.BOND_BONDING -> "bonding"
-          BluetoothDevice.BOND_BONDED -> "bonded"
-          else -> "notBonded"
-        }
-
-        FlutterBlueDeviceManager.updateDevice(bondState = stateStr)
-
-        device?.let {
-          BluetoothEventEmitter.emit(
-            "gap",
-            "bondStateChanged",
-            it.address,
-            mapOf("bondState" to stateStr)
-          )
-        }
-      }
-    }
-  }
-
-
-
-
-
-
-
-
-
   private fun getBtAddressViaReflection(adapter: BluetoothAdapter): String {
     return try {
       val m = adapter.javaClass.getDeclaredMethod("getAddress")
@@ -487,16 +450,13 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
       }
     })
 
-    val filter = IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
-    appContext.registerReceiver(bondStateReceiver, filter)
+
 
     // Start the encryption checker automatically
     FlutterBlueGapManager.onAttachedToEngine(binding)
     FlutterBlueL2capManager.onAttachedToEngine(binding)
     FlutterBlueSmpManager.onAttachedToEngine(binding)
     FlutterBlueChannelSoundingManager.onAttachedToEngine(binding)
-
-    BluetoothEncryptionMonitor.start()
   }
 
   /**
@@ -512,15 +472,5 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
     FlutterBlueL2capManager.onDetachedFromEngine()
     FlutterBlueSmpManager.onDetachedFromEngine()
     FlutterBlueChannelSoundingManager.onDetachedFromEngine()
-
-
-    // Stop checking when plugin is detached
-    BluetoothEncryptionMonitor.stop()
-
-    try {
-      appContext.unregisterReceiver(bondStateReceiver)
-    } catch (e: IllegalArgumentException) {
-      Log.w("FlutterBlueConnect", "Receiver already unregistered: ${e.message}")
-    }
   }
 }
