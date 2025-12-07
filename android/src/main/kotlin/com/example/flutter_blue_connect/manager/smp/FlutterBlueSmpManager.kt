@@ -19,6 +19,89 @@ object FlutterBlueSmpManager {
   private var bluetoothAdapter: BluetoothAdapter? = null
   private var bluetoothManager: BluetoothManager? = null
 
+  private fun generateLocalLeScOobData() {
+//        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+//        if (bluetoothAdapter == null) {
+//          result.error("NO_ADAPTER", "BluetoothAdapter not available", null)
+//          return
+//        }
+//
+//        try {
+//          // Find the hidden method via reflection
+//          val method = bluetoothAdapter.javaClass.declaredMethods.firstOrNull {
+//            it.name == "generateLocalOobData"
+//          }
+//
+//          if (method == null) {
+//            result.error("METHOD_NOT_FOUND", "generateLocalOobData not available", null)
+//            return
+//          }
+//
+//          // Load hidden classes reflectively
+//          val callbackClass = Class.forName("android.bluetooth.BluetoothAdapter\$OobDataCallback")
+//          val oobDataClass = Class.forName("android.bluetooth.OobData")
+//
+//          // Build dynamic proxy for the callback
+//          val callbackProxy = java.lang.reflect.Proxy.newProxyInstance(
+//            callbackClass.classLoader,
+//            arrayOf(callbackClass)
+//          ) { _, method, args ->
+//            if (method.name == "onOobData") {
+//              val arg = args?.getOrNull(0)
+//              Log.d("FlutterBlueConnect", "OOB callback arg type: ${arg?.javaClass?.name}")
+//
+//              if (oobDataClass.isInstance(arg)) {
+//                val oobData = arg
+//
+//                fun getBytes(fn: String): ByteArray? = try {
+//                  oobDataClass.getMethod(fn).invoke(oobData) as? ByteArray
+//                } catch (e: Exception) {
+//                  Log.e("FlutterBlueConnect", "Error calling $fn: ${e.message}")
+//                  null
+//                }
+//
+//                val map = mapOf(
+//                  "confirmationHash" to (getBytes("getConfirmationHash")?.joinToString(",") ?: ""),
+//                  "randomizerHash" to (getBytes("getRandomizerHash")?.joinToString(",") ?: ""),
+//                  "deviceAddressWithType" to (getBytes("getDeviceAddressWithType")?.joinToString(",") ?: ""),
+//                  "leTemporaryKey" to (getBytes("getLeTemporaryKey")?.joinToString(",") ?: "")
+//                )
+//
+//                Handler(Looper.getMainLooper()).post {
+//                  Log.d("FlutterBlueConnect", "✅ OOB DATA GENERATED: $map")
+//                  result.success(map)
+//                }
+//              } else {
+//                Log.w("FlutterBlueConnect", "OOB callback returned unexpected type: ${arg?.javaClass}")
+//                Handler(Looper.getMainLooper()).post {
+//                  result.error("NULL_OOB", "OOB callback returned invalid type", null)
+//                }
+//              }
+//            }
+//            null
+//          }
+//
+//          // Inline Executor proxy
+//          val executorInterface = Class.forName("java.util.concurrent.Executor")
+//          val executorProxy = java.lang.reflect.Proxy.newProxyInstance(
+//            executorInterface.classLoader,
+//            arrayOf(executorInterface)
+//          ) { _, m, args ->
+//            if (m.name == "execute") {
+//              val runnable = args?.getOrNull(0) as? Runnable
+//              runnable?.run()
+//            }
+//            null
+//          }
+//
+//          // TRANSPORT_LE = 2
+//          method.invoke(bluetoothAdapter, 2, executorProxy, callbackProxy)
+//
+//        } catch (e: Exception) {
+//          result.error("OOB_ERROR", e.toString(), null)
+//        }
+  }
+
   fun startPairing(bluetoothAddress: String) {
     val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
     if (device == null) {
