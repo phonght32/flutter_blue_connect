@@ -7,8 +7,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 
-import android.util.Log
+import io.flutter.embedding.engine.plugins.FlutterPlugin
 
+import android.util.Log
 
 import android.Manifest
 import android.content.Context
@@ -30,9 +31,11 @@ import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 
 @RequiresApi(Build.VERSION_CODES.BAKLAVA)
-class ChannelSoundingManager(private val context: Context) {
+object FlutterBlueChannelSoundingManager {
 
-  private val rangingManager: RangingManager? = context.getSystemService(RangingManager::class.java)
+  private lateinit var appContext: Context
+
+  private var rangingManager: RangingManager? = null
   private var rangingSession: RangingSession? = null
   private lateinit var rangingCapabilityCallback: RangingManager.RangingCapabilitiesCallback
   private var deviceAddress : String = ""
@@ -134,8 +137,8 @@ class ChannelSoundingManager(private val context: Context) {
     }
   }
 
-  fun startChannelSounding(bluetoothAddress: String) {
-    if (rangingManager == null || rangingSession !=null || !hasRangingPermission(context)) return
+  fun start(bluetoothAddress: String) {
+    if (rangingManager == null || rangingSession !=null || !hasRangingPermission(appContext)) return
 
     deviceAddress = bluetoothAddress
 
@@ -182,11 +185,14 @@ class ChannelSoundingManager(private val context: Context) {
         if (capabilities.csCapabilities!!.supportedSecurityLevels.contains(1)) {
           // Channel Sounding supported
           // Check if Ranging Permission is granted before starting the session
-          if (hasRangingPermission(context)) {
-            rangingSession = rangingManager.createRangingSession(
-              context.mainExecutor,
-              rangingSessionCallback
-            )
+          if (hasRangingPermission(appContext)) {
+            rangingManager?.let { manager ->
+              rangingSession = manager.createRangingSession(
+                appContext.mainExecutor,
+                rangingSessionCallback
+              )
+            }
+
             rangingSession?.let {
               try {
                 it.addDeviceToRangingSession(rawRangingDeviceConfig)
@@ -202,15 +208,15 @@ class ChannelSoundingManager(private val context: Context) {
             return@RangingCapabilitiesCallback
           }
         } else {
-          stopChannelSounding(bluetoothAddress)
+          stop(bluetoothAddress)
         }
       } else {
-        stopChannelSounding(bluetoothAddress)
+        stop(bluetoothAddress)
       }
-
     }
 
-    rangingManager.registerCapabilitiesCallback(context.mainExecutor, rangingCapabilityCallback!!)
+    val manager = rangingManager ?: return
+    manager.registerCapabilitiesCallback(appContext.mainExecutor, rangingCapabilityCallback!!)
   }
 
   /**
@@ -223,7 +229,7 @@ class ChannelSoundingManager(private val context: Context) {
    * @param onClosed An optional suspend function to be called after the session is closed.
    */
   @RequiresApi(Build.VERSION_CODES.BAKLAVA)
-  fun stopChannelSounding(
+  fun stop(
     bluetoothAddress: String,
     onClosed: (() -> Unit)? = null
   ) {
@@ -243,5 +249,15 @@ class ChannelSoundingManager(private val context: Context) {
     } catch (_: Exception) {}
 
     onClosed?.invoke()
+  }
+
+  fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+    appContext = binding.applicationContext
+
+    rangingManager = appContext.getSystemService(RangingManager::class.java)
+  }
+
+  fun onDetachedFromEngine() {
+
   }
 }

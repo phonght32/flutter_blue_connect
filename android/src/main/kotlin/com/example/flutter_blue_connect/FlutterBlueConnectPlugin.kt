@@ -77,36 +77,8 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
   private var bluetoothAdapter: BluetoothAdapter? = null
   private var bluetoothManager: BluetoothManager? = null
 
-
-
   // Sink for sending scan results to Flutter
   private var bluetoothEventSink: EventChannel.EventSink? = null
-
-
-
-
-
-
-  private var generatedOobData: Map<String, Any>? = null
-
-
-
-  private var channelSoundingManager: ChannelSoundingManager? = null
-
-
-  private fun logMessage(level: String, message: String) {
-    val ts = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US)
-      .format(java.util.Date())
-    val logMsg = "[$ts] $message"
-
-    when (level.lowercase()) {
-      "info" -> Log.i("FlutterBlueConnect", logMsg)
-      "warn", "warning" -> Log.w("FlutterBlueConnect", logMsg)
-      "error" -> Log.e("FlutterBlueConnect", logMsg)
-      "debug" -> Log.d("FlutterBlueConnect", logMsg)
-      else -> Log.v("FlutterBlueConnect", logMsg) // default verbose
-    }
-  }
 
   private val bondStateReceiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
@@ -451,44 +423,34 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
       }
 
       "startChannelSounding" -> {
-//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-//        if (bluetoothAddress == null) {
-//          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-//          return
-//        }
-//
-//        if (channelSoundingManager == null) {
-//          result.error("MANAGER_NOT_INITIALIZED", "ChannelSoundingManager not initialized", null)
-//          return
-//        }
-//
-//        try {
-//          channelSoundingManager?.startChannelSounding(bluetoothAddress)
-//
-//          result.success("Channel sounding started for $bluetoothAddress")
-//        } catch (e: Exception) {
-//          result.error("START_FAILED", e.message, null)
-//        }
+        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+        if (bluetoothAddress == null) {
+          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+          return
+        }
+
+        try {
+          FlutterBlueChannelSoundingManager.start(bluetoothAddress)
+
+          result.success("Channel sounding started for $bluetoothAddress")
+        } catch (e: Exception) {
+          result.error("START_FAILED", e.message, null)
+        }
       }
 
       "stopChannelSounding" -> {
-//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-//        if (bluetoothAddress == null) {
-//          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-//          return
-//        }
-//
-//        if (channelSoundingManager == null) {
-//          result.error("MANAGER_NOT_INITIALIZED", "ChannelSoundingManager not initialized", null)
-//          return
-//        }
-//
-//        try {
-//          channelSoundingManager?.stopChannelSounding(bluetoothAddress)
-//          result.success("Channel sounding stopped for $bluetoothAddress")
-//        } catch (e: Exception) {
-//          result.error("STOP_FAILED", e.message, null)
-//        }
+        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+        if (bluetoothAddress == null) {
+          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+          return
+        }
+
+        try {
+          FlutterBlueChannelSoundingManager.stop(bluetoothAddress)
+          result.success("Channel sounding stopped for $bluetoothAddress")
+        } catch (e: Exception) {
+          result.error("STOP_FAILED", e.message, null)
+        }
       }
 
       /**
@@ -532,9 +494,9 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
     FlutterBlueGapManager.onAttachedToEngine(binding)
     FlutterBlueL2capManager.onAttachedToEngine(binding)
     FlutterBlueSmpManager.onAttachedToEngine(binding)
-    BluetoothEncryptionMonitor.start()
+    FlutterBlueChannelSoundingManager.onAttachedToEngine(binding)
 
-    channelSoundingManager = ChannelSoundingManager(appContext)
+    BluetoothEncryptionMonitor.start()
   }
 
   /**
@@ -549,6 +511,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
     FlutterBlueGapManager.onDetachedFromEngine()
     FlutterBlueL2capManager.onDetachedFromEngine()
     FlutterBlueSmpManager.onDetachedFromEngine()
+    FlutterBlueChannelSoundingManager.onDetachedFromEngine()
 
 
     // Stop checking when plugin is detached
