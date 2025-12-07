@@ -54,13 +54,7 @@ import javax.crypto.spec.IvParameterSpec
 
 import kotlin.experimental.xor
 
-
-
-
-
 import com.example.flutter_blue_connect.FlutterBlueConnectPlugin
-
-
 
 /**
  * Flutter plugin to manage Bluetooth Low Energy (BLE) scanning in Android.
@@ -79,17 +73,6 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
 
   // Sink for sending scan results to Flutter
   private var bluetoothEventSink: EventChannel.EventSink? = null
-
-  private fun getBtAddressViaReflection(adapter: BluetoothAdapter): String {
-    return try {
-      val m = adapter.javaClass.getDeclaredMethod("getAddress")
-      m.isAccessible = true
-      (m.invoke(adapter) as? String ?: "02:00:00:00:00:00").uppercase() // ensures non-null
-    } catch (e: Exception) {
-      android.util.Log.w("OOB", "Reflection getAddress() failed: ${e.message}")
-      "00:00:00:00:00:00" // fallback string
-    }
-  }
 
   /**
    * Handles Flutter method calls for starting/stopping the Bluetooth scan.

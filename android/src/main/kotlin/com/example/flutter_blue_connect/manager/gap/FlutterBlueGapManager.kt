@@ -58,6 +58,17 @@ object FlutterBlueGapManager {
 
 	private var scanRefreshTimeMs: Int = 500
 
+	private fun getBtAddressViaReflection(adapter: BluetoothAdapter): String {
+		return try {
+			val m = adapter.javaClass.getDeclaredMethod("getAddress")
+			m.isAccessible = true
+			(m.invoke(adapter) as? String ?: "02:00:00:00:00:00").uppercase() // ensures non-null
+		} catch (e: Exception) {
+			android.util.Log.w("OOB", "Reflection getAddress() failed: ${e.message}")
+			"00:00:00:00:00:00" // fallback string
+		}
+	}
+
 	private val bondStateReceiver = object : BroadcastReceiver() {
 		override fun onReceive(context: Context?, intent: Intent?) {
 			if (BluetoothDevice.ACTION_BOND_STATE_CHANGED == intent?.action) {
