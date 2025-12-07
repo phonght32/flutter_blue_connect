@@ -415,29 +415,14 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
        * Handles method startPairing.
        */
       "startPairing" -> {
-//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-//
-//        if (bluetoothAddress == null) {
-//          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-//          return
-//        }
-//
-//        val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
-//        if (device == null) {
-//          result.error("DEVICE_NOT_FOUND", "Device not found for address $bluetoothAddress", null)
-//          return
-//        }
-//
-//        try {
-//          val success = device.createBond()
-//          if (success) {
-//            result.success("Pairing initiated with $bluetoothAddress")
-//          } else {
-//            result.error("PAIRING_FAILED", "createBond() returned false", null)
-//          }
-//        } catch (e: Exception) {
-//          result.error("PAIRING_ERROR", e.message, null)
-//        }
+        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+
+        if (bluetoothAddress == null) {
+          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+          return
+        }
+
+        FlutterBlueSmpManager.startPairing(bluetoothAddress)
       }
 
       /**
@@ -445,103 +430,21 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
        * Initiates Out-of-Band pairing using provided OOB data.
        */
       "startPairingOob" -> {
-//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-//        val oobData = call.argument<ByteArray>("oobData")
-//
-//        if (bluetoothAddress == null) {
-//          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-//          return
-//        }
-//
-//        val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
-//        if (device == null) {
-//          result.error("DEVICE_NOT_FOUND", "Device not found for address $bluetoothAddress", null)
-//          return
-//        }
-//
-//        try {
-//          // Check Android version for OOB support
-//          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-//
-//            // For Android 10 (Q) and above - OOB pairing with data
-//            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && oobData != null) {
-//              logMessage("info", "Starting OOB pairing with data for $bluetoothAddress")
-//
-//              // Parse OOB data - typically contains confirmation value and randomizer
-//              // Format depends on your OOB exchange mechanism
-//              if (oobData.size >= 32) {
-//                val confirmationValue = oobData.copyOfRange(0, 16)
-//                val randomizer = oobData.copyOfRange(16, 32)
-//
-//                // Use reflection to access setOobData method
-//                val method = device.javaClass.getMethod(
-//                  "setOobData",
-//                  ByteArray::class.java,
-//                  ByteArray::class.java
-//                )
-//                method.invoke(device, confirmationValue, randomizer)
-//
-//                logMessage("info", "OOB data set successfully")
-//              } else {
-//                result.error("INVALID_OOB_DATA", "OOB data must be at least 32 bytes", null)
-//                return
-//              }
-//            }
-//
-//            // Initiate the bonding process
-//            val success = device.createBond()
-//
-//            if (success) {
-//              logMessage("info", "OOB pairing initiated with $bluetoothAddress")
-//              result.success("OOB pairing initiated with $bluetoothAddress")
-//            } else {
-//              logMessage("error", "createBond() returned false for $bluetoothAddress")
-//              result.error("PAIRING_FAILED", "createBond() returned false", null)
-//            }
-//
-//          } else {
-//            result.error(
-//              "UNSUPPORTED_VERSION",
-//              "OOB pairing requires Android 4.4 (KitKat) or higher",
-//              null
-//            )
-//          }
-//
-//        } catch (e: NoSuchMethodException) {
-//          logMessage("error", "OOB method not available: ${e.message}")
-//          result.error("METHOD_NOT_AVAILABLE", "OOB pairing method not available on this device", null)
-//        } catch (e: Exception) {
-//          logMessage("error", "OOB pairing error: ${e.message}")
-//          result.error("PAIRING_ERROR", e.message, null)
-//        }
-      }
+        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+        val oobData = call.argument<ByteArray>("oobData")
 
-      "startEncryptConnection" -> {
-//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-//
-//        val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
-//        if (device == null) {
-//          result.error("DEVICE_NOT_FOUND", "Device not found for address $bluetoothAddress", null)
-//          return
-//        }
-//
-//        try {
-//          // Reflection để gọi hidden API
-//          val method = device.javaClass.getDeclaredMethod("startEncryptConnection")
-//          method.isAccessible = true
-//          val success = method.invoke(device) as Boolean
-//
-//          if (success) {
-//            result.success("Encrypt connection started for $bluetoothAddress")
-//          } else {
-//            result.error("ENCRYPT_FAILED", "startEncryptConnection() returned false", null)
-//          }
-//
-//        } catch (e: Exception) {
-//          result.error("ENCRYPT_FAILED", e.message, null)
-//        }
-      }
+        if (bluetoothAddress == null) {
+          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+          return
+        }
 
+        if (oobData == null) {
+          result.error("INVALID_ARGUMENT", "Missing oob data.", null)
+          return
+        }
+
+        FlutterBlueSmpManager.startPairingOob(bluetoothAddress, oobData)
+      }
 
       /**
        * Handles remove bond.
@@ -654,6 +557,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
     // Start the encryption checker automatically
     FlutterBlueGapManager.onAttachedToEngine(binding)
     FlutterBlueL2capManager.onAttachedToEngine(binding)
+    FlutterBlueSmpManager.onAttachedToEngine(binding)
     BluetoothEncryptionMonitor.start()
 
     channelSoundingManager = ChannelSoundingManager(appContext)
@@ -670,6 +574,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
 
     FlutterBlueGapManager.onDetachedFromEngine()
     FlutterBlueL2capManager.onDetachedFromEngine()
+    FlutterBlueSmpManager.onDetachedFromEngine()
 
 
     // Stop checking when plugin is detached
