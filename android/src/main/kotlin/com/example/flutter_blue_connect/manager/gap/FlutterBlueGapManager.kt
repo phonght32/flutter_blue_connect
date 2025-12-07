@@ -126,10 +126,6 @@ object FlutterBlueGapManager {
 				linkLayerConnectionTimeouts[address]?.first?.removeCallbacks(linkLayerConnectionTimeouts[address]?.second!!)
 				linkLayerConnectionTimeouts.remove(address)
 
-				FlutterBlueLog.info("Connected to GATT server")
-	//        gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_LOW_POWER)
-	//        gatt.discoverServices()
-
 				val bondState = when (gatt.device.bondState) {
 					BluetoothDevice.BOND_BONDING -> "bonding"
 					BluetoothDevice.BOND_BONDED -> "bonded"
@@ -148,7 +144,8 @@ object FlutterBlueGapManager {
 					"notEncrypted"
 				}
 
-				pendingResult?.success("Connected to $address")
+				FlutterBlueLog.info("Connected to device $address")
+				pendingResult?.success("Connected to device $address")
 
 				FlutterBlueDeviceManager.updateDevice(
 					name = gatt.device.name,
@@ -170,14 +167,11 @@ object FlutterBlueGapManager {
 
 				linkLayerConnectionTimeouts.remove(address)
 
-				FlutterBlueLog.info("Disconnected from GATT server")
-
-				// If connection failed before success
-				pendingResult?.error("CONNECTION_FAILED", "Failed to connect to $address", null)
+				FlutterBlueLog.info("Disconnected with device $address")
+				pendingResult?.error("CONNECTION_FAILED", "Disconnected with device $address", null)
 
 				BluetoothEventEmitter.emit("gap", "disconnected", address)
 
-				// Only clear device after event disconnected was emitted
 				FlutterBlueDeviceManager.clear()
 			}
 		}
@@ -262,8 +256,8 @@ object FlutterBlueGapManager {
 		}
 	}
 
-	fun startScan(refreshTimeMs : Int) {
-		scanRefreshTimeMs = refreshTimeMs
+	fun startScan(call: MethodCall, result: MethodChannel.Result) {
+		scanRefreshTimeMs = call.argument<Int>("refreshTimeMs") ?: 500
 
 		val scanner = bluetoothAdapter?.bluetoothLeScanner
 		val scanFilters = listOf<ScanFilter>()  // Apply filters if needed
@@ -273,28 +267,35 @@ object FlutterBlueGapManager {
 		scanner?.startScan(scanFilters, settings, scanCallback)
 
 		handlerScanResultChangedCheck.post(runnableScanResultChangedCheck)
-		handlerTimerCleanup?.postDelayed(runnableTimerCleanup!!, 1000)
+		handlerTimerCleanup.postDelayed(runnableTimerCleanup, 1000)
 
 		FlutterBlueLog.info("Bluetooth scanning started.")
+		result.success(true)
 	}
 
-	fun stopScan() {
+	fun stopScan(call: MethodCall, result: MethodChannel.Result) {
 		val scanner = bluetoothAdapter?.bluetoothLeScanner
 		scanner?.stopScan(scanCallback)
 		handlerScanResultChangedCheck.removeCallbacks(runnableScanResultChangedCheck)
-		handlerTimerCleanup?.removeCallbacks(runnableTimerCleanup!!) // Stop the cleanup loop
+		handlerTimerCleanup.removeCallbacks(runnableTimerCleanup) // Stop the cleanup loop
 
 		FlutterBlueLog.info("Bluetooth scanning stopped.")
+		result.success(true)
 	}
 
-	fun connect(bluetoothAddress: String?, timeoutMillis: Int, result: MethodChannel.Result) {
+	fun connect(call: MethodCall, result: MethodChannel.Result) {
+		val bluetoothAddress = call.argument<String>("bluetoothAddress")
+		val timeoutMillis = call.argument<Int>("timeout") ?: 10000
+
 		if (bluetoothAdapter?.isEnabled != true) {
-			FlutterBlueLog.error("Cannot connect, reason: BLUETOOTH_DISABLED")
+			FlutterBlueLog.error("Cannot connect to target, reason: BLUETOOTH_DISABLED")
+			result.error("BLUETOOTH_DISABLED", "Cannot connect to target - Bluetooth is disabled", null)
 			return
 		}
 
 		if (bluetoothAddress == null) {
-			FlutterBlueLog.error("Cannot connect, reason: INVALID_ADDRESS")
+			FlutterBlueLog.error("Cannot connect to target, reason: INVALID_ADDRESS")
+			result.error("INVALID_ADDRESS", "Cannot connect to target - Invalid address", null)
 			return
 		}
 
@@ -319,19 +320,24 @@ object FlutterBlueGapManager {
 			handler.postDelayed(timeoutRunnable, timeoutMillis.toLong())
 			linkLayerConnectionTimeouts[device.address] = Pair(handler, timeoutRunnable)
 		} else {
-			FlutterBlueLog.error("Cannot connect, reason: UNKNOWN")
+			FlutterBlueLog.error("Cannot connect to target, reason: GATT_NULL")
+			result.error("GATT_NULL", "Cannot connect to target - GATT NULL", null)
 		}
 	}
 
-	fun disconnect(bluetoothAddress: String?) {
+	fun disconnect(call: MethodCall, result: MethodChannel.Result) {
+		val bluetoothAddress = call.argument<String>("bluetoothAddress")
+
 		if (bluetoothAddress == null) {
-			FlutterBlueLog.error("Cannot disconnect, reason: INVALID_ADDRESS")
+			FlutterBlueLog.error("Cannot disconnect to target, reason: INVALID_ADDRESS")
+			result.error("INVALID_ARGUMENT", "Cannot disconnect to target - Invalid address", null)
 			return
 		}
 
 		val gatt = activeGattConnections[bluetoothAddress]
 		if (gatt == null) {
 			FlutterBlueLog.error("Cannot disconnect, reason: NO_CONNECTION")
+			result.error("NO_CONNECTION", "No active GATT connection", null)
 			return
 		}
 
@@ -344,12 +350,20 @@ object FlutterBlueGapManager {
 		Handler(Looper.getMainLooper()).postDelayed({
 			gatt.close()
 			activeGattConnections.remove(bluetoothAddress)
+			result.success(true)
 		}, 500)
 
 		FlutterBlueLog.info("Disconnecting from $bluetoothAddress ...")
 	}
 
-	fun deleteBond(bluetoothAddress: String) {
+	fun deleteBond(call: MethodCall, result: MethodChannel.Result) {
+		val bluetoothAddress = call.argument<String>("bluetoothAddress")
+
+		if (bluetoothAddress == null) {
+			result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+			return
+		}
+
 		try {
 			val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
 
@@ -358,11 +372,14 @@ object FlutterBlueGapManager {
 
 			if (success) {
 				FlutterBlueLog.info("removeBond($bluetoothAddress): success")
+				result.success(true)
 			} else {
 				FlutterBlueLog.warn("removeBond($bluetoothAddress): failed")
+				result.error("BOND_REMOVE_FAILED", "removeBond returned false", null)
 			}
 		} catch (e: Exception) {
 			FlutterBlueLog.error("Error removing bond for $bluetoothAddress, msg: $e")
+			result.error("REMOVE_EXCEPTION", e.message, null)
 		}
 	}
 

@@ -80,25 +80,11 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
   override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
     when (call.method) {
 
-      "startScan" -> {
-        val scanRefreshTimeMs = call.argument<Int>("refreshTimeMs") ?: 500
-        FlutterBlueGapManager.startScan(scanRefreshTimeMs)
-      }
-
-      "stopScan" -> {
-        FlutterBlueGapManager.stopScan()
-      }
-
-      "connect" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-        val timeoutMillis = call.argument<Int>("timeout") ?: 10000
-        FlutterBlueGapManager.connect(bluetoothAddress, timeoutMillis, result)
-      }
-
-      "disconnect" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-        FlutterBlueGapManager.disconnect(bluetoothAddress)
-      }
+      "startScan" -> FlutterBlueGapManager.startScan(call, result)
+      "stopScan" -> FlutterBlueGapManager.stopScan(call, result)
+      "connect" -> FlutterBlueGapManager.connect(call, result)
+      "disconnect" -> FlutterBlueGapManager.disconnect(call, result)
+      "deleteBond" -> FlutterBlueGapManager.deleteBond(call, result)
 
       "l2capChannelOpen" -> {
         val bluetoothAddress = call.argument<String>("bluetoothAddress")
@@ -166,17 +152,6 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
         }
 
         FlutterBlueSmpManager.startPairingOob(bluetoothAddress, oobData)
-      }
-
-      "deleteBond" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-
-        if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-          return
-        }
-
-        FlutterBlueGapManager.deleteBond(bluetoothAddress)
       }
 
       "startChannelSounding" -> {
