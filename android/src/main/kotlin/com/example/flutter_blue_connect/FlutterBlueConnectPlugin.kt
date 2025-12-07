@@ -411,9 +411,6 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
 //        }
       }
 
-      /**
-       * Handles method startPairing.
-       */
       "startPairing" -> {
         val bluetoothAddress = call.argument<String>("bluetoothAddress")
 
@@ -425,10 +422,6 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
         FlutterBlueSmpManager.startPairing(bluetoothAddress)
       }
 
-      /**
-       * Handles method startPairingOob.
-       * Initiates Out-of-Band pairing using provided OOB data.
-       */
       "startPairingOob" -> {
         val bluetoothAddress = call.argument<String>("bluetoothAddress")
         val oobData = call.argument<ByteArray>("oobData")
@@ -446,34 +439,15 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
         FlutterBlueSmpManager.startPairingOob(bluetoothAddress, oobData)
       }
 
-      /**
-       * Handles remove bond.
-       */
       "deleteBond" -> {
-//        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-//
-//        if (bluetoothAddress == null) {
-//          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-//          return
-//        }
-//
-//        try {
-//          val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
-//
-//          val method = device?.javaClass?.getMethod("removeBond")
-//          val success = method?.invoke(device) as Boolean
-//
-//          if (success) {
-//            Log.i("FlutterBlueConnect", "removeBond($bluetoothAddress): success")
-//            result.success(true)
-//          } else {
-//            Log.w("FlutterBlueConnect", "removeBond($bluetoothAddress): failed")
-//            result.success(false)
-//          }
-//        } catch (e: Exception) {
-//          Log.e("FlutterBlueConnect", "Error removing bond for $bluetoothAddress", e)
-//          result.error("REMOVE_BOND_ERROR", e.message, null)
-//        }
+        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+
+        if (bluetoothAddress == null) {
+          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+          return
+        }
+
+        FlutterBlueGapManager.deleteBond(bluetoothAddress)
       }
 
       "startChannelSounding" -> {

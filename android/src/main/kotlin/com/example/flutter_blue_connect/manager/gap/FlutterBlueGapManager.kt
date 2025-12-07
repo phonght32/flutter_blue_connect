@@ -326,16 +326,6 @@ object FlutterBlueGapManager {
 
 		FlutterBlueL2capManager.closeChannel(bluetoothAddress, false)
 
-//		// Close L2CAP if open
-//		activeL2capSockets[bluetoothAddress]?.let {
-//			try {
-//				it.close()
-//			} catch (e: Exception) {
-//				Log.w("L2CAPClose", "Failed to close L2CAP: ${e.message}")
-//			}
-//			activeL2capSockets.remove(bluetoothAddress)
-//		}
-
 		// just disconnect, don't close yet — let callback handle it
 		gatt.disconnect()
 
@@ -346,6 +336,23 @@ object FlutterBlueGapManager {
 		}, 500)
 
 		FlutterBlueLog.info("Disconnecting from $bluetoothAddress ...")
+	}
+
+	fun deleteBond(bluetoothAddress: String) {
+		try {
+			val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
+
+			val method = device?.javaClass?.getMethod("removeBond")
+			val success = method?.invoke(device) as Boolean
+
+			if (success) {
+				FlutterBlueLog.info("removeBond($bluetoothAddress): success")
+			} else {
+				FlutterBlueLog.warn("removeBond($bluetoothAddress): failed")
+			}
+		} catch (e: Exception) {
+			FlutterBlueLog.error("Error removing bond for $bluetoothAddress, msg: $e")
+		}
 	}
 
 	fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
