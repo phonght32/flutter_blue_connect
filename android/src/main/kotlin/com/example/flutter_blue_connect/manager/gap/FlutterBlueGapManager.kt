@@ -29,6 +29,12 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
 object FlutterBlueGapManager {
 
 	private lateinit var appContext: Context
@@ -341,7 +347,18 @@ object FlutterBlueGapManager {
 			return
 		}
 
-		FlutterBlueL2capManager.closeChannel(bluetoothAddress, false)
+		val socket = FlutterBlueL2capManager.getSocket(bluetoothAddress)
+		socket?.let {
+			try {
+				it.close()
+				CoroutineScope(Dispatchers.IO).launch {
+					delay(50)
+				}
+			} catch (e: Exception) {
+				Log.w("L2CAPClose", "Failed to close L2CAP: ${e.message}")
+			}
+			FlutterBlueL2capManager.removeSocket(bluetoothAddress)
+		}
 
 		// just disconnect, don't close yet — let callback handle it
 		gatt.disconnect()

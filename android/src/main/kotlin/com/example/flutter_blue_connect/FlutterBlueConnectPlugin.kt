@@ -86,41 +86,9 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
       "disconnect" -> FlutterBlueGapManager.disconnect(call, result)
       "deleteBond" -> FlutterBlueGapManager.deleteBond(call, result)
 
-      "l2capChannelOpen" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-        val psm = call.argument<Int>("psm") ?: return result.error("INVALID_ARGUMENT", "Missing PSM parameter.", null)
-        val secure = call.argument<Boolean>("secure") ?: false
-        val timeoutMillis = call.argument<Int>("timeout") ?: 5000
-
-        if (bluetoothAddress == null) {
-          FlutterBlueLog.error("Cannot open L2CAP channel, reason: INVALID_ADDRESS")
-          return
-        }
-
-        FlutterBlueL2capManager.openChannel(bluetoothAddress, psm, secure, timeoutMillis)
-      }
-
-      "l2capChannelClose" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-        if (bluetoothAddress == null) {
-          FlutterBlueLog.error("Missing bluetoothAddress parameter.")
-          return
-        }
-
-        FlutterBlueL2capManager.closeChannel(bluetoothAddress, true)
-      }
-
-      "l2capSend" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-        val payload = call.argument<ByteArray>("data")
-
-        if (bluetoothAddress == null || payload == null) {
-          FlutterBlueLog.error("Missing bluetoothAddress or data")
-          return
-        }
-
-        FlutterBlueL2capManager.sendData(bluetoothAddress, payload)
-      }
+      "l2capChannelOpen" -> FlutterBlueL2capManager.openChannel(call, result)
+      "l2capChannelClose" -> FlutterBlueL2capManager.closeChannel(call, result)
+      "l2capSend" -> FlutterBlueL2capManager.sendData(call, result)
 
       "printAllBluetoothMethods" -> {
         FirmwareSupport.printAllBluetoothMethods()
