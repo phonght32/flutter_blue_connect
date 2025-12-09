@@ -19,10 +19,18 @@ object FlutterBlueSmpManager {
   private var bluetoothAdapter: BluetoothAdapter? = null
   private var bluetoothManager: BluetoothManager? = null
 
-  fun startPairing(bluetoothAddress: String) {
+  fun startPairing(call: MethodCall, result: MethodChannel.Result) {
+    val bluetoothAddress = call.argument<String>("bluetoothAddress")
+    if (bluetoothAddress == null) {
+      FlutterBlueLog.error("Missing bluetooth address")
+      result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+      return
+    }
+
     val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
     if (device == null) {
       FlutterBlueLog.error("Device not found for address $bluetoothAddress")
+      result.error("DEVICE_NOT_FOUND", "Device not found for $bluetoothAddress", null)
       return
     }
 
@@ -30,67 +38,84 @@ object FlutterBlueSmpManager {
       val success = device.createBond()
       if (success) {
         FlutterBlueLog.info("Pairing initiated with $bluetoothAddress")
+        result.success(true)
       } else {
         FlutterBlueLog.error("createBond() returned false")
+        result.error("PAIRING_FAILED", "createBond() returned false", null)
       }
     } catch (e: Exception) {
       FlutterBlueLog.error("PAIRING_ERROR ${e.message}")
+      result.error("PAIRING_ERROR", e.message, null)
     }
   }
 
-  fun startPairingOob(bluetoothAddress: String, oobData: ByteArray) {
+  fun startPairingOob(call: MethodCall, result: MethodChannel.Result) {
+    val bluetoothAddress = call.argument<String>("bluetoothAddress")
+    val oobData = call.argument<ByteArray>("oobData")
+
+    if (bluetoothAddress == null) {
+      FlutterBlueLog.error("Missing bluetooth address")
+      result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+      return
+    }
+
+    if (oobData == null) {
+      FlutterBlueLog.error("Missing oob data")
+      result.error("INVALID_ARGUMENT", "Missing oob data.", null)
+      return
+    }
+
     val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
     if (device == null) {
       FlutterBlueLog.error("Device not found for address $bluetoothAddress")
+      result.error("DEVICE_NOT_FOUND", "Device not found for $bluetoothAddress", null)
       return
     }
 
     try {
-      // Check Android version for OOB support
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+      // Android >= 4.4
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+        result.error("UNSUPPORTED", "OOB pairing requires Android 4.4 or higher", null)
+        return
+      }
 
-        // For Android 10 (Q) and above - OOB pairing with data
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && oobData != null) {
-          FlutterBlueLog.info("Starting OOB pairing with data for $bluetoothAddress")
-
-          // Parse OOB data - typically contains confirmation value and randomizer
-          // Format depends on your OOB exchange mechanism
-          if (oobData.size >= 32) {
-            val confirmationValue = oobData.copyOfRange(0, 16)
-            val randomizer = oobData.copyOfRange(16, 32)
-
-            // Use reflection to access setOobData method
-            val method = device.javaClass.getMethod(
-              "setOobData",
-              ByteArray::class.java,
-              ByteArray::class.java
-            )
-            method.invoke(device, confirmationValue, randomizer)
-
-            FlutterBlueLog.info("OOB data set successfully")
-          } else {
-            FlutterBlueLog.error("OOB data must be at least 32 bytes")
-            return
-          }
+      // For Android 10+ with OOB data
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (oobData.size < 32) {
+          FlutterBlueLog.error("OOB data must be >= 32 bytes")
+          result.error("INVALID_OOB", "OOB data must be at least 32 bytes", null)
+          return
         }
 
-        // Initiate the bonding process
-        val success = device.createBond()
+        val confirmationValue = oobData.copyOfRange(0, 16)
+        val randomizer = oobData.copyOfRange(16, 32)
 
-        if (success) {
-          FlutterBlueLog.info("OOB pairing initiated with $bluetoothAddress")
-        } else {
-          FlutterBlueLog.error("createBond() returned false for $bluetoothAddress")
-        }
+        val method = device.javaClass.getMethod(
+          "setOobData",
+          ByteArray::class.java,
+          ByteArray::class.java
+        )
+        method.invoke(device, confirmationValue, randomizer)
 
+        FlutterBlueLog.info("OOB data set successfully")
+      }
+
+      // Start bonding
+      val success = device.createBond()
+      if (success) {
+        FlutterBlueLog.info("OOB pairing initiated with $bluetoothAddress")
+        result.success(true)
       } else {
-        FlutterBlueLog.error("OOB pairing requires Android 4.4 (KitKat) or higher")
+        FlutterBlueLog.error("createBond() returned false for $bluetoothAddress")
+        result.error("PAIRING_FAILED", "createBond() returned false", null)
       }
 
     } catch (e: NoSuchMethodException) {
       FlutterBlueLog.error("OOB method not available: ${e.message}")
+      result.error("OOB_NOT_SUPPORTED", "setOobData not available", null)
     } catch (e: Exception) {
       FlutterBlueLog.error("OOB pairing error: ${e.message}")
+      result.error("OOB_ERROR", e.message, null)
     }
   }
 

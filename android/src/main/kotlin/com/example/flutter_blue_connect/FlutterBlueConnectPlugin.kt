@@ -90,68 +90,13 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
       "l2capChannelClose" -> FlutterBlueL2capManager.closeChannel(call, result)
       "l2capSend" -> FlutterBlueL2capManager.sendData(call, result)
 
-      "printAllBluetoothMethods" -> {
-        FirmwareSupport.printAllBluetoothMethods()
-      }
+      "startPairing" -> FlutterBlueSmpManager.startPairing(call, result)
+      "startPairingOob" -> FlutterBlueSmpManager.startPairingOob(call, result)
 
-      "startPairing" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
+      "startChannelSounding" -> FlutterBlueChannelSoundingManager.start(call, result)
+      "stopChannelSounding" -> FlutterBlueChannelSoundingManager.stop(call, result)
 
-        if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-          return
-        }
-
-        FlutterBlueSmpManager.startPairing(bluetoothAddress)
-      }
-
-      "startPairingOob" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-        val oobData = call.argument<ByteArray>("oobData")
-
-        if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-          return
-        }
-
-        if (oobData == null) {
-          result.error("INVALID_ARGUMENT", "Missing oob data.", null)
-          return
-        }
-
-        FlutterBlueSmpManager.startPairingOob(bluetoothAddress, oobData)
-      }
-
-      "startChannelSounding" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-        if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-          return
-        }
-
-        try {
-          FlutterBlueChannelSoundingManager.start(bluetoothAddress)
-
-          result.success("Channel sounding started for $bluetoothAddress")
-        } catch (e: Exception) {
-          result.error("START_FAILED", e.message, null)
-        }
-      }
-
-      "stopChannelSounding" -> {
-        val bluetoothAddress = call.argument<String>("bluetoothAddress")
-        if (bluetoothAddress == null) {
-          result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
-          return
-        }
-
-        try {
-          FlutterBlueChannelSoundingManager.stop(bluetoothAddress)
-          result.success("Channel sounding stopped for $bluetoothAddress")
-        } catch (e: Exception) {
-          result.error("STOP_FAILED", e.message, null)
-        }
-      }
+      "printAllBluetoothMethods" -> FirmwareSupport.printAllBluetoothMethods()
 
       /**
        * Handles undefined method.
