@@ -7,6 +7,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 
+import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.MethodCall
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 
 import android.util.Log
@@ -29,6 +32,7 @@ import android.ranging.raw.RawInitiatorRangingConfig
 import android.ranging.raw.RawRangingDevice
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
+import java.lang.Exception
 
 @RequiresApi(Build.VERSION_CODES.BAKLAVA)
 object FlutterBlueChannelSoundingManager {
@@ -53,6 +57,23 @@ object FlutterBlueChannelSoundingManager {
       context,
       Manifest.permission.RANGING
     ) == PackageManager.PERMISSION_GRANTED
+  }
+
+  private fun stopInternal(bluetoothAddress: String) {
+    val session = rangingSession ?: return
+
+    try {
+      session.stop() // triggers onStopped/onClosed internally
+      session.close() // safe to call immediately after stop
+    } catch (e: Exception) {
+      Log.e("ChannelSounding", "Error stopping/closing session: ${e.message}")
+    }
+
+    rangingSession = null
+
+    try {
+      rangingManager?.unregisterCapabilitiesCallback(rangingCapabilityCallback)
+    } catch (_: Exception) {}
   }
 
   // Implement all abstract methods of RangingSession.Callback
@@ -119,7 +140,6 @@ object FlutterBlueChannelSoundingManager {
         "channelSoundingStopped",
         deviceAddress,
       )
-
     }
 
     override fun onClosed(reason: Int) {
@@ -137,8 +157,28 @@ object FlutterBlueChannelSoundingManager {
     }
   }
 
-  fun start(bluetoothAddress: String) {
-    if (rangingManager == null || rangingSession !=null || !hasRangingPermission(appContext)) return
+  fun start(call: MethodCall, result: MethodChannel.Result) {
+    val bluetoothAddress = call.argument<String>("bluetoothAddress")
+
+    if (bluetoothAddress == null) {
+      result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+      return
+    }
+
+    if (rangingManager == null) {
+      result.error("NO_MANAGER", "RangingManager not initialized", null)
+      return
+    }
+
+    if (rangingSession != null) {
+      result.error("SESSION_EXISTS", "Ranging session already running", null)
+      return
+    }
+
+    if (!hasRangingPermission(appContext)) {
+      result.error("NO_PERMISSION", "Ranging permission not granted", null)
+      return
+    }
 
     deviceAddress = bluetoothAddress
 
@@ -180,43 +220,46 @@ object FlutterBlueChannelSoundingManager {
       .setSessionConfig(sessionConfig)
       .build()
 
-    rangingCapabilityCallback = RangingManager.RangingCapabilitiesCallback { capabilities ->
-      if (capabilities.csCapabilities != null) {
-        if (capabilities.csCapabilities!!.supportedSecurityLevels.contains(1)) {
-          // Channel Sounding supported
-          // Check if Ranging Permission is granted before starting the session
-          if (hasRangingPermission(appContext)) {
-            rangingManager?.let { manager ->
+    try {
+      val manager = rangingManager ?: return result.error("NO_MANAGER", "RangingManager unavailable", null)
+
+      rangingCapabilityCallback = RangingManager.RangingCapabilitiesCallback { capabilities ->
+        if (capabilities.csCapabilities != null) {
+          if (capabilities.csCapabilities!!.supportedSecurityLevels.contains(1)) {
+
+            if (!hasRangingPermission(appContext)) {
+              result.error("NO_PERMISSION", "Missing RANGING permission", null)
+              return@RangingCapabilitiesCallback
+            }
+
+            try {
               rangingSession = manager.createRangingSession(
                 appContext.mainExecutor,
                 rangingSessionCallback
               )
-            }
 
-            rangingSession?.let {
-              try {
+              rangingSession?.let {
                 it.addDeviceToRangingSession(rawRangingDeviceConfig)
                 it.start(rangingPreference) // only start if addDevice succeeds
-              } catch (e: Exception) {
-                Log.e("ChannelSounding", "Failed to add device: ${e.message}")
-                it.close()
-                rangingSession = null
               }
+
+              result.success(true)
+
+            } catch (e:Exception) {
+              result.error("START_FAILED", e.message, null)
             }
+
           } else {
-
-            return@RangingCapabilitiesCallback
+            stopInternal(bluetoothAddress)
+            result.error("NOT_SUPPORTED", "Device does not support Channel Sounding", null)
           }
-        } else {
-          stop(bluetoothAddress)
         }
-      } else {
-        stop(bluetoothAddress)
       }
-    }
 
-    val manager = rangingManager ?: return
-    manager.registerCapabilitiesCallback(appContext.mainExecutor, rangingCapabilityCallback!!)
+      manager.registerCapabilitiesCallback(appContext.mainExecutor, rangingCapabilityCallback)
+    } catch (e: Exception) {
+      result.error("START_ERROR", e.message, null)
+    }
   }
 
   /**
@@ -229,26 +272,35 @@ object FlutterBlueChannelSoundingManager {
    * @param onClosed An optional suspend function to be called after the session is closed.
    */
   @RequiresApi(Build.VERSION_CODES.BAKLAVA)
-  fun stop(
-    bluetoothAddress: String,
-    onClosed: (() -> Unit)? = null
-  ) {
-    val session = rangingSession ?: return
+  fun stop(call: MethodCall, result: MethodChannel.Result) {
+    val bluetoothAddress = call.argument<String>("bluetoothAddress")
+
+    if (bluetoothAddress == null) {
+      result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+      return
+    }
+
+    val session = rangingSession
+    if (session == null) {
+      result.error("NO_SESSION", "No active ranging session", null)
+      return
+    }
 
     try {
       session.stop() // triggers onStopped/onClosed internally
       session.close() // safe to call immediately after stop
+      rangingSession = null
+
+      try {
+        rangingManager?.unregisterCapabilitiesCallback(rangingCapabilityCallback)
+      } catch (_: Exception) {}
+
+      result.success(true)
+
     } catch (e: Exception) {
       Log.e("ChannelSounding", "Error stopping/closing session: ${e.message}")
+      result.error("STOP_FAILED", e.message, null)
     }
-
-    rangingSession = null
-
-    try {
-      rangingManager?.unregisterCapabilitiesCallback(rangingCapabilityCallback)
-    } catch (_: Exception) {}
-
-    onClosed?.invoke()
   }
 
   fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {

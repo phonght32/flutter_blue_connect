@@ -12,6 +12,9 @@ import android.bluetooth.BluetoothSocket
 import android.os.Build
 import android.content.Context
 
+import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.MethodCall
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 
 object FlutterBlueSmpManager {
