@@ -25,6 +25,7 @@ import android.ranging.RangingData
 import android.ranging.RangingDevice
 import android.ranging.RangingPreference
 import android.ranging.RangingPreference.DEVICE_ROLE_INITIATOR
+import android.ranging.RangingPreference.DEVICE_ROLE_RESPONDER
 import android.ranging.SensorFusionParams
 import android.ranging.ble.cs.BleCsRangingParams
 import android.ranging.ble.cs.BleCsRangingCapabilities
@@ -59,7 +60,7 @@ object FlutterBlueChannelSoundingManager {
     ) == PackageManager.PERMISSION_GRANTED
   }
 
-  private fun stopInternal(bluetoothAddress: String) {
+  private fun stopInitiatorInternal(bluetoothAddress: String) {
     val session = rangingSession ?: return
 
     try {
@@ -157,7 +158,7 @@ object FlutterBlueChannelSoundingManager {
     }
   }
 
-  fun start(call: MethodCall, result: MethodChannel.Result) {
+  fun startInitiator(call: MethodCall, result: MethodChannel.Result) {
     val bluetoothAddress = call.argument<String>("bluetoothAddress")
 
     if (bluetoothAddress == null) {
@@ -250,7 +251,7 @@ object FlutterBlueChannelSoundingManager {
             }
 
           } else {
-            stopInternal(bluetoothAddress)
+            stopInitiatorInternal(bluetoothAddress)
             result.error("NOT_SUPPORTED", "Device does not support Channel Sounding", null)
           }
         }
@@ -272,7 +273,7 @@ object FlutterBlueChannelSoundingManager {
    * @param onClosed An optional suspend function to be called after the session is closed.
    */
   @RequiresApi(Build.VERSION_CODES.BAKLAVA)
-  fun stop(call: MethodCall, result: MethodChannel.Result) {
+  fun stopInitiator(call: MethodCall, result: MethodChannel.Result) {
     val bluetoothAddress = call.argument<String>("bluetoothAddress")
 
     if (bluetoothAddress == null) {
@@ -282,7 +283,7 @@ object FlutterBlueChannelSoundingManager {
 
     val session = rangingSession
     if (session == null) {
-      result.error("NO_SESSION", "No active ranging session", null)
+      result.success(false)
       return
     }
 
