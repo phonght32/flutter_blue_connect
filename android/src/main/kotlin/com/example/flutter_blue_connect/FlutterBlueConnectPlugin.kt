@@ -95,6 +95,7 @@ class FlutterBlueConnectPlugin: FlutterPlugin, MethodChannel.MethodCallHandler {
 
       "startChannelSoundingInitiator" -> FlutterBlueChannelSoundingManager.startInitiator(call, result)
       "stopChannelSoundingInitiator" -> FlutterBlueChannelSoundingManager.stopInitiator(call, result)
+      "startChannelSoundingReflector" -> FlutterBlueChannelSoundingManager.startReflector(call, result)
 
       "printAllBluetoothMethods" -> FirmwareSupport.printAllBluetoothMethods()
 
