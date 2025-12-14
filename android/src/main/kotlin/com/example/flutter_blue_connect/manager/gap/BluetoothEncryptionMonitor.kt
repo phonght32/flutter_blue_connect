@@ -33,19 +33,13 @@ object BluetoothEncryptionMonitor {
 
                 FlutterBlueDeviceManager.updateDevice(encryptionState = newState)
 
-                BluetoothEventEmitter.emit(
-                  layer = "gap",
-                  event = "encryptionStateChanged",
-                  bluetoothAddress = address,
-                )
-
-                Log.i("BluetoothEncryptionMonitor", "🔒 Encryption state changed: $address → $newState")
+                BluetoothEventEmitter.emit("gap", "encryptionStateChanged", address)
               }
             }
           }
         }
       } catch (e: Exception) {
-        Log.w("BluetoothEncryptionMonitor", "Check failed: ${e.message}")
+        FlutterBlueLog.error("Monitor encyption failed, message: ${e.message}")
       }
 
       handler.postDelayed(this, 100) // check every 100ms
