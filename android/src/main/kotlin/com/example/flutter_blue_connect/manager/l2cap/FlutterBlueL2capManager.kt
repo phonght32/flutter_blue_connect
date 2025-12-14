@@ -70,19 +70,19 @@ object FlutterBlueL2capManager {
             val data = buffer.copyOf(bytesRead)
 
             val hexString = data.joinToString(" ") { "%02X".format(it) }
-            FlutterBlueLog.info("L2CAP RX | btaddr=$address, len=${data.size}, payload=$hexString")
+            FlutterBlueLog.info("L2CAP data received | btaddr=$address, len=${data.size}, data=$hexString")
 
             BluetoothEventEmitter.emit("l2cap", "dataReceived", address,
               mapOf(
                 "data" to data,
-                "hex" to data.joinToString(" ") { "%02X".format(it) },
+                "hex" to hexString,
                 "length" to data.size
               )
             )
           }
         }
       } catch (e: IOException) {
-        FlutterBlueLog.error("Disconnected from $address: ${e.message}")
+        FlutterBlueLog.error("L2CAP disconnected from $address: ${e.message}")
         activeL2capSockets.remove(address)
 
         FlutterBlueDeviceManager.updateDevice(l2capState = "disconnected")
@@ -100,39 +100,47 @@ object FlutterBlueL2capManager {
     val timeout = call.argument<Int>("timeout") ?: 5000
 
     if (bluetoothAddress == null) {
-      FlutterBlueLog.error("Cannot open L2CAP channel, reason: invalid bluetooth address")
-      result.error("INVALID_ARGUMENT", "Cannot open L2CAP channel, reason: invalid bluetooth address", null)
+      val errorMsg = "Open L2CAP channel failed, reason: missing address"
+      FlutterBlueLog.error(errorMsg)
+      result.error("INVALID_ARGUMENT", errorMsg, null)
       return
     }
 
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-      FlutterBlueLog.error("Cannot open L2CAP channel, reason: Android version does not support")
-      result.error("UNSUPPORTED", "Requires Android 10 or higher.", null)
+      val errorMsg = "Open L2CAP channel failed, reason: Android version does not support"
+      FlutterBlueLog.error(errorMsg)
+      result.error("UNSUPPORTED", errorMsg, null)
       return
     }
 
     if (bluetoothAdapter?.isEnabled != true) {
-      FlutterBlueLog.error("Cannot open L2CAP channel, reason: Bluetooth is not enabled.")
-      result.error("BLUETOOTH_OFF", "Cannot open L2CAP channel, reason: Bluetooth is not enabled.", null)
+      val errorMsg = "Open L2CAP channel failed, reason: Bluetooth is not enabled"
+      FlutterBlueLog.error(errorMsg)
+      result.error("BLUETOOTH_OFF", errorMsg, null)
       return
     }
 
     val device = bluetoothAdapter?.getRemoteDevice(bluetoothAddress)
     if (device == null) {
-      FlutterBlueLog.error("Open l2cap failed, could not find device with address $bluetoothAddress")
+      val errorMsg = "Open L2CAP channel failed, reason: could not find device address $bluetoothAddress"
+      FlutterBlueLog.error(errorMsg)
+      result.error("NOT_EXIST", errorMsg, null)
       return
     }
 
     val manager = bluetoothManager ?: run {
-      FlutterBlueLog.error("BluetoothManager is not initialized.")
+      val errorMsg = "Open L2CAP channel failed, reason: BluetoothManager is not initialized"
+      FlutterBlueLog.error(errorMsg)
+      result.error("NOT_EXIST", errorMsg, null)
       return
     }
     val connectedDevices = manager.getConnectedDevices(BluetoothProfile.GATT)
     val isConnected = connectedDevices?.any { it.address == bluetoothAddress } == true
 
     if (!isConnected) {
-      FlutterBlueLog.error("Device is not connected at GAP level")
-      FlutterBlueLog.info("Device $bluetoothAddress is not connected at GAP level")
+      val errorMsg = "Open L2CAP channel failed, reason: Device is not connected at GAP level"
+      FlutterBlueLog.error(errorMsg)
+      result.error("NOT_EXIST", errorMsg, null)
       return
     }
 
@@ -142,7 +150,6 @@ object FlutterBlueL2capManager {
     val timeoutRunnable = Runnable {
       activeL2capSockets[bluetoothAddress]?.close()
       activeL2capSockets.remove(bluetoothAddress)
-      FlutterBlueLog.warn("L2CAP connection to $bluetoothAddress timed out.")
       FlutterBlueLog.error("L2CAP connection to $bluetoothAddress timed out after ${timeout}ms")
     }
 
@@ -178,7 +185,8 @@ object FlutterBlueL2capManager {
         withContext(Dispatchers.Main) {
           handler.removeCallbacks(timeoutRunnable)
           l2capConnectionTimeouts.remove(bluetoothAddress)
-          FlutterBlueLog.error(e.message ?: "Cannot open L2CAP channel")
+
+          FlutterBlueLog.error("Open L2CAP channel failed, message: ${e.message}")
         }
       }
     }
@@ -187,15 +195,19 @@ object FlutterBlueL2capManager {
   @RequiresApi(Build.VERSION_CODES.Q)
   fun closeChannel(call: MethodCall, result: MethodChannel.Result) {
     val bluetoothAddress = call.argument<String>("bluetoothAddress")
+
     if (bluetoothAddress == null) {
-      FlutterBlueLog.error("Missing bluetoothAddress parameter.")
-      result.error("INVALID_ARGUMENT", "Missing bluetoothAddress parameter.", null)
+      val errorMsg = "L2CAP channel close failed, reason: missing address"
+      FlutterBlueLog.error(errorMsg)
+      result.error("INVALID_ARGUMENT", errorMsg, null)
       return
     }
 
     val socket = activeL2capSockets[bluetoothAddress]
     if (socket == null) {
-      result.error("NOT_OPEN", "No active L2CAP channel for $bluetoothAddress", null)
+      val errorMsg = "L2CAP channel close failed, reason: No active L2CAP channel"
+      FlutterBlueLog.error(errorMsg)
+      result.error("NOT_EXIST", errorMsg, null)
       return
     }
 
@@ -211,7 +223,6 @@ object FlutterBlueL2capManager {
 
         withContext(Dispatchers.Main) {
           if (!hadListener) {
-            // No listener, emit manually
             FlutterBlueDeviceManager.updateDevice(l2capState = "disconnected")
             BluetoothEventEmitter.emit("l2cap", "disconnected", bluetoothAddress)
           }
@@ -220,7 +231,7 @@ object FlutterBlueL2capManager {
         }
       } catch (e: Exception) {
         withContext(Dispatchers.Main) {
-          FlutterBlueLog.error("Failed to close L2CAP: ${e.message}")
+          FlutterBlueLog.error("Close L2CAP channel failed, message: ${e.message}")
         }
       }
     }
@@ -231,15 +242,18 @@ object FlutterBlueL2capManager {
     val bluetoothAddress = call.argument<String>("bluetoothAddress")
     val data = call.argument<ByteArray>("data")
 
-    if (bluetoothAddress == null || data == null) {
-      FlutterBlueLog.error("Missing bluetoothAddress or data")
-      result.error("INVALID_ARGUMENT", "Missing bluetoothAddress or data", null)
+    if (bluetoothAddress == null) {
+      val errorMsg = "L2CAP data send failed, reason: missing address"
+      FlutterBlueLog.error(errorMsg)
+      result.error("INVALID_ARGUMENT", errorMsg, null)
       return
     }
 
     val socket = activeL2capSockets[bluetoothAddress]
     if (socket == null) {
-      FlutterBlueLog.error("No active L2CAP channel for $bluetoothAddress")
+      val errorMsg = "L2CAP data send failed, reason: No active L2CAP channel"
+      FlutterBlueLog.error(errorMsg)
+      result.error("NOT_EXIST", errorMsg, null)
       return
     }
 
@@ -249,7 +263,7 @@ object FlutterBlueL2capManager {
       try {
         val hexString = data.joinToString(" ") { "%02X".format(it) }
 
-        FlutterBlueLog.info("L2CAP TX | btaddr=$bluetoothAddress, len=${data.size}, payload=$hexString")
+        FlutterBlueLog.info("L2CAP data sent | btaddr=$bluetoothAddress, len=${data.size}, payload=$hexString")
 
         socket.outputStream.write(data)
         socket.outputStream.flush()
@@ -259,7 +273,7 @@ object FlutterBlueL2capManager {
         }
       } catch (e: IOException) {
         withContext(Dispatchers.Main) {
-          FlutterBlueLog.error("Failed to send data: ${e.message}")
+          FlutterBlueLog.error("L2CAP data send failed, message: ${e.message}")
         }
       }
     }
