@@ -249,6 +249,13 @@ object FlutterBlueL2capManager {
       return
     }
 
+    if (data == null) {
+      val errorMsg = "L2CAP data send failed, reason: missing data"
+      FlutterBlueLog.error(errorMsg)
+      result.error("INVALID_ARGUMENT", errorMsg, null)
+      return
+    }
+
     val socket = activeL2capSockets[bluetoothAddress]
     if (socket == null) {
       val errorMsg = "L2CAP data send failed, reason: No active L2CAP channel"
